@@ -26,14 +26,15 @@ async function main(): Promise<void> {
     }
 
     log.info('Configuration:', {
-        repo: `${config.github.owner}/${config.github.repo}`,
+        owner: config.github.owner,
+        repo: config.github.repo || '(all repos — multi-repo mode)',
         devBranch: config.github.devBranch,
         issueLabel: config.github.issueLabel,
+        aiProvider: config.aiProvider,
         webhookMode: config.triggers.webhookMode,
         cronMode: config.triggers.cronMode,
         pollInterval: `${config.triggers.pollIntervalMinutes} min`,
         maxConcurrent: config.agent.maxConcurrentAgents,
-        aiModel: config.gemini.model,
     });
 
     const superAgent = new SuperAgent();

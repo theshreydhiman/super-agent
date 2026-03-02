@@ -93,13 +93,21 @@ export class WebhookServer {
             payload.label?.name === config.github.issueLabel;
 
         if (hasTargetLabel && (isNew || isLabeled)) {
-            log.info(`🎯 Triggering Super Agent for issue #${issue.number}`);
+            const repoName = payload.repository?.name;
+            log.info(`Triggering Super Agent for issue #${issue.number} in ${repoName || 'configured repo'}`);
 
             // Run asynchronously so we don't block the webhook response
             setImmediate(() => {
-                this.superAgent.run().catch((err) => {
-                    log.error('Super Agent run failed', { error: err.message });
-                });
+                if (repoName && !config.github.repo) {
+                    // Multi-repo mode: only process the specific repo from the webhook
+                    this.superAgent.processRepo(repoName).catch((err) => {
+                        log.error('Super Agent run failed', { error: err.message });
+                    });
+                } else {
+                    this.superAgent.run().catch((err) => {
+                        log.error('Super Agent run failed', { error: err.message });
+                    });
+                }
             });
         }
     }
