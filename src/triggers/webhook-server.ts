@@ -10,36 +10,31 @@ export class WebhookServer {
     private app: express.Application;
     private superAgent: SuperAgent;
 
-    constructor(superAgent: SuperAgent) {
-        this.app = express();
+    constructor(app: express.Application, superAgent: SuperAgent) {
+        this.app = app;
         this.superAgent = superAgent;
-        this.setupMiddleware();
         this.setupRoutes();
     }
 
-    private setupMiddleware(): void {
-        // Parse raw body for signature verification, then JSON
-        this.app.use(
-            express.json({
-                verify: (req: any, _res, buf) => {
-                    req.rawBody = buf;
-                },
-            })
-        );
-    }
-
     private setupRoutes(): void {
+        // Webhook needs raw body for signature verification
+        const webhookJsonParser = express.json({
+            verify: (req: any, _res, buf) => {
+                req.rawBody = buf;
+            },
+        });
+
         // Health check
         this.app.get('/health', (_req, res) => {
             res.json({
                 status: 'ok',
-                service: 'Super Agent Webhook Server',
+                service: 'Super Agent',
                 timestamp: new Date().toISOString(),
             });
         });
 
         // GitHub webhook endpoint
-        this.app.post('/webhook', async (req, res) => {
+        this.app.post('/webhook', webhookJsonParser, async (req, res) => {
             try {
                 // Verify webhook signature
                 if (config.github.webhookSecret) {
@@ -71,12 +66,6 @@ export class WebhookServer {
         });
     }
 
-    /**
-     * Handles GitHub issue webhook events.
-     * Triggers Super Agent when:
-     * - A new issue is opened with the configured label
-     * - The configured label is added to an existing issue
-     */
     private async handleIssueEvent(payload: any): Promise<void> {
         const action = payload.action;
         const issue = payload.issue;
@@ -96,10 +85,8 @@ export class WebhookServer {
             const repoName = payload.repository?.name;
             log.info(`Triggering Super Agent for issue #${issue.number} in ${repoName || 'configured repo'}`);
 
-            // Run asynchronously so we don't block the webhook response
             setImmediate(() => {
                 if (repoName && !config.github.repo) {
-                    // Multi-repo mode: only process the specific repo from the webhook
                     this.superAgent.processRepo(repoName).catch((err) => {
                         log.error('Super Agent run failed', { error: err.message });
                     });
@@ -112,9 +99,6 @@ export class WebhookServer {
         }
     }
 
-    /**
-     * Verifies the GitHub webhook signature.
-     */
     private verifySignature(payload: Buffer, signature: string): boolean {
         if (!signature) return false;
 
@@ -127,17 +111,5 @@ export class WebhookServer {
             Buffer.from(signature),
             Buffer.from(expected)
         );
-    }
-
-    /**
-     * Starts the webhook server.
-     */
-    start(): void {
-        const port = config.triggers.webhookPort;
-        this.app.listen(port, () => {
-            log.info(`🌐 Webhook server listening on port ${port}`);
-            log.info(`   Health: http://localhost:${port}/health`);
-            log.info(`   Webhook: http://localhost:${port}/webhook`);
-        });
     }
 }

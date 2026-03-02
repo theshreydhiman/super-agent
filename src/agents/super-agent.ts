@@ -3,6 +3,7 @@ import { AIEngine } from '../ai/ai-engine';
 import { EmailService } from '../services/email-service';
 import { WorkerAgent, WorkerResult } from './worker-agent';
 import { ReviewerAgent, ReviewedPR } from './reviewer-agent';
+import { AgentCallbacks } from '../services/run-tracker';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
 
@@ -13,18 +14,19 @@ export class SuperAgent {
     private ai: AIEngine;
     private emailService: EmailService;
     private processingRepos = new Set<string>();
+    private callbacks?: AgentCallbacks;
 
-    constructor() {
+    constructor(callbacks?: AgentCallbacks) {
         this.discoveryClient = new GitHubClient();
         this.ai = new AIEngine();
         this.emailService = new EmailService();
+        this.callbacks = callbacks;
     }
 
-    /**
-     * Main orchestration loop:
-     * 1. Determine target repos (single or all)
-     * 2. For each repo, fetch issues and process them
-     */
+    setCallbacks(callbacks: AgentCallbacks): void {
+        this.callbacks = callbacks;
+    }
+
     async run(): Promise<void> {
         log.info('Super Agent starting a new run...');
 
@@ -40,10 +42,6 @@ export class SuperAgent {
         }
     }
 
-    /**
-     * Returns the list of repos to scan.
-     * Single-repo mode if GITHUB_REPO is set, otherwise discovers all repos.
-     */
     private async getTargetRepos(): Promise<string[]> {
         if (config.github.repo) {
             return [config.github.repo];
@@ -51,10 +49,6 @@ export class SuperAgent {
         return this.discoveryClient.listOwnerRepos();
     }
 
-    /**
-     * Processes a single repo: fetch issues, spawn workers, review & create PRs.
-     * Can be called directly by webhooks for targeted processing.
-     */
     async processRepo(repoName: string): Promise<void> {
         if (this.processingRepos.has(repoName)) {
             log.warn(`Already processing ${repoName}, skipping`);
@@ -63,6 +57,7 @@ export class SuperAgent {
 
         this.processingRepos.add(repoName);
         const github = new GitHubClient(config.github.owner, repoName);
+        let runId: number | undefined;
 
         try {
             log.info(`--- Processing repo: ${config.github.owner}/${repoName} ---`);
@@ -76,6 +71,11 @@ export class SuperAgent {
 
             log.info(`Found ${issues.length} issue(s) in ${repoName}`);
 
+            // Track run start
+            if (this.callbacks?.onRunStart) {
+                runId = await this.callbacks.onRunStart(config.github.owner, repoName, issues.length);
+            }
+
             // Label all issues as "in-progress"
             for (const issue of issues) {
                 await github.addLabel(issue.number, 'in-progress');
@@ -83,7 +83,7 @@ export class SuperAgent {
             }
 
             // Spawn Worker Agents (concurrently with limit)
-            const workerResults = await this.spawnWorkers(issues, github);
+            const workerResults = await this.spawnWorkers(issues, github, repoName, runId);
 
             const successCount = workerResults.filter((r) => r.success).length;
             const failCount = workerResults.filter((r) => !r.success).length;
@@ -107,21 +107,30 @@ export class SuperAgent {
                     }
                 }
             }
+
+            // Track run completion
+            if (this.callbacks?.onRunComplete && runId) {
+                await this.callbacks.onRunComplete(runId, 'completed');
+            }
         } catch (error: any) {
             log.error(`Failed processing repo ${repoName}`, { error: error.message });
+            if (this.callbacks?.onRunComplete && runId) {
+                await this.callbacks.onRunComplete(runId, 'failed', error.message);
+            }
         } finally {
             this.processingRepos.delete(repoName);
         }
     }
 
-    /**
-     * Spawns Worker Agents concurrently, respecting the max concurrency limit.
-     */
-    private async spawnWorkers(issues: GitHubIssue[], github: GitHubClient): Promise<WorkerResult[]> {
+    private async spawnWorkers(
+        issues: GitHubIssue[],
+        github: GitHubClient,
+        repoName: string,
+        runId?: number
+    ): Promise<WorkerResult[]> {
         const maxConcurrent = config.agent.maxConcurrentAgents;
         const results: WorkerResult[] = [];
 
-        // Process in batches
         for (let i = 0; i < issues.length; i += maxConcurrent) {
             const batch = issues.slice(i, i + maxConcurrent);
 
@@ -130,9 +139,25 @@ export class SuperAgent {
                 `issues ${batch.map((b) => `#${b.number}`).join(', ')}`
             );
 
-            const batchPromises = batch.map((issue) => {
+            const batchPromises = batch.map(async (issue) => {
+                // Track issue start
+                let issueDbId: number | undefined;
+                if (this.callbacks?.onIssueStart && runId) {
+                    issueDbId = await this.callbacks.onIssueStart(
+                        runId, issue.number, issue.title,
+                        config.github.owner, repoName
+                    );
+                }
+
                 const worker = new WorkerAgent(github, this.ai);
-                return worker.processIssue(issue);
+                const result = await worker.processIssue(issue);
+
+                // Track issue completion
+                if (this.callbacks?.onIssueProcessed && issueDbId) {
+                    await this.callbacks.onIssueProcessed(issueDbId, result);
+                }
+
+                return result;
             });
 
             const batchResults = await Promise.allSettled(batchPromises);
@@ -149,9 +174,6 @@ export class SuperAgent {
         return results;
     }
 
-    /**
-     * Logs a summary of the run for a specific repo.
-     */
     private logSummary(repoName: string, workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
         console.log('\n' + '='.repeat(60));
         console.log(`  SUPER AGENT RUN SUMMARY — ${config.github.owner}/${repoName}`);

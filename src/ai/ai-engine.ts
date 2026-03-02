@@ -240,14 +240,18 @@ ${filesContext}`;
 
             const parsed = JSON.parse(content);
 
-            const changes: CodeChange[] = (parsed.changes || []).map(
-                (c: any) => ({
+            const changes: CodeChange[] = (parsed.changes || [])
+                .filter((c: any) => c.filePath && typeof c.newContent === 'string')
+                .map((c: any) => ({
                     filePath: c.filePath,
                     originalContent: fileContents[c.filePath] || null,
                     newContent: c.newContent,
-                    explanation: c.explanation,
-                })
-            );
+                    explanation: c.explanation || '',
+                }));
+
+            if (changes.length === 0) {
+                throw new Error('AI generated no valid file changes (missing filePath or newContent)');
+            }
 
             log.info(`Generated ${changes.length} file changes`);
             return changes;

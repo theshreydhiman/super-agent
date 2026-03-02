@@ -10,6 +10,8 @@ export const config = {
         devBranch: process.env.DEV_BRANCH || 'dev',
         issueLabel: process.env.ISSUE_LABEL || 'ai-agent',
         webhookSecret: process.env.WEBHOOK_SECRET || '',
+        clientId: process.env.GITHUB_CLIENT_ID || '',
+        clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
     },
 
     // AI Provider: 'gemini', 'openai', 'claude', or 'groq'
@@ -50,14 +52,32 @@ export const config = {
     // Triggers
     triggers: {
         webhookMode: process.env.WEBHOOK_MODE === 'true',
-        cronMode: process.env.CRON_MODE !== 'false', // default true
-        pollIntervalMinutes: parseInt(process.env.POLL_INTERVAL_MINUTES || '5', 10),
         webhookPort: parseInt(process.env.WEBHOOK_PORT || '3001', 10),
     },
 
     // Agent
     agent: {
         maxConcurrentAgents: parseInt(process.env.MAX_CONCURRENT_AGENTS || '3', 10),
+    },
+
+    // MySQL
+    mysql: {
+        host: process.env.MYSQL_HOST || 'localhost',
+        port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+        user: process.env.MYSQL_USER || 'root',
+        password: process.env.MYSQL_PASSWORD || 'Pass@123',
+        database: process.env.MYSQL_DATABASE || 'super_agent',
+    },
+
+    // Session
+    sessionSecret: process.env.SESSION_SECRET || 'super-agent-secret-change-me',
+
+    // Encryption key for stored secrets
+    encryptionKey: process.env.ENCRYPTION_KEY || 'default-encryption-key-change-me',
+
+    // Dashboard
+    dashboard: {
+        url: process.env.DASHBOARD_URL || 'http://localhost:3001',
     },
 };
 
