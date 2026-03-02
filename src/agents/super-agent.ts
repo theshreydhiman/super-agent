@@ -9,89 +9,115 @@ import { config } from '../config';
 const log = createLogger('SuperAgent');
 
 export class SuperAgent {
-    private github: GitHubClient;
+    private discoveryClient: GitHubClient;
     private ai: AIEngine;
     private emailService: EmailService;
-    private isProcessing = false;
+    private processingRepos = new Set<string>();
 
     constructor() {
-        this.github = new GitHubClient();
+        this.discoveryClient = new GitHubClient();
         this.ai = new AIEngine();
         this.emailService = new EmailService();
     }
 
     /**
      * Main orchestration loop:
-     * 1. Fetch actionable issues
-     * 2. Label them "in-progress"
-     * 3. Spawn Worker Agents (concurrently, with limit)
-     * 4. Wait for all workers to complete
-     * 5. Spawn Reviewer Agent to create PRs
-     * 6. Report results
+     * 1. Determine target repos (single or all)
+     * 2. For each repo, fetch issues and process them
      */
     async run(): Promise<void> {
-        if (this.isProcessing) {
-            log.warn('Super Agent is already processing, skipping this run');
+        log.info('Super Agent starting a new run...');
+
+        try {
+            const repos = await this.getTargetRepos();
+            log.info(`Targeting ${repos.length} repo(s): ${repos.join(', ')}`);
+
+            for (const repoName of repos) {
+                await this.processRepo(repoName);
+            }
+        } catch (error: any) {
+            log.error('Super Agent run failed', { error: error.message });
+        }
+    }
+
+    /**
+     * Returns the list of repos to scan.
+     * Single-repo mode if GITHUB_REPO is set, otherwise discovers all repos.
+     */
+    private async getTargetRepos(): Promise<string[]> {
+        if (config.github.repo) {
+            return [config.github.repo];
+        }
+        return this.discoveryClient.listOwnerRepos();
+    }
+
+    /**
+     * Processes a single repo: fetch issues, spawn workers, review & create PRs.
+     * Can be called directly by webhooks for targeted processing.
+     */
+    async processRepo(repoName: string): Promise<void> {
+        if (this.processingRepos.has(repoName)) {
+            log.warn(`Already processing ${repoName}, skipping`);
             return;
         }
 
-        this.isProcessing = true;
-        log.info('🚀 Super Agent starting a new run...');
+        this.processingRepos.add(repoName);
+        const github = new GitHubClient(config.github.owner, repoName);
 
         try {
-            // Step 1: Fetch actionable issues
-            const issues = await this.github.fetchOpenIssues();
+            log.info(`--- Processing repo: ${config.github.owner}/${repoName} ---`);
+
+            const issues = await github.fetchOpenIssues();
 
             if (issues.length === 0) {
-                log.info('No actionable issues found. Sleeping...');
+                log.info(`No actionable issues in ${repoName}. Skipping.`);
                 return;
             }
 
-            log.info(`Found ${issues.length} issue(s) to process`);
+            log.info(`Found ${issues.length} issue(s) in ${repoName}`);
 
-            // Step 2: Label all issues as "in-progress"
+            // Label all issues as "in-progress"
             for (const issue of issues) {
-                await this.github.addLabel(issue.number, 'in-progress');
+                await github.addLabel(issue.number, 'in-progress');
                 log.info(`Labeled issue #${issue.number} as "in-progress"`);
             }
 
-            // Step 3: Spawn Worker Agents (concurrently with limit)
-            const workerResults = await this.spawnWorkers(issues);
+            // Spawn Worker Agents (concurrently with limit)
+            const workerResults = await this.spawnWorkers(issues, github);
 
             const successCount = workerResults.filter((r) => r.success).length;
             const failCount = workerResults.filter((r) => !r.success).length;
 
-            log.info(`Workers completed: ${successCount} success, ${failCount} failed`);
+            log.info(`Workers completed for ${repoName}: ${successCount} success, ${failCount} failed`);
 
-            // Step 4: Spawn Reviewer Agent
+            // Spawn Reviewer Agent
             if (successCount > 0) {
-                log.info('🔍 Starting Reviewer Agent...');
-                const reviewer = new ReviewerAgent(this.github, this.ai, this.emailService);
+                log.info(`Starting Reviewer Agent for ${repoName}...`);
+                const reviewer = new ReviewerAgent(github, this.ai, this.emailService);
                 const reviewedPRs = await reviewer.reviewAndCreatePRs(workerResults);
 
-                log.info(`✅ Run complete! ${reviewedPRs.length} PR(s) created.`);
-                this.logSummary(workerResults, reviewedPRs);
+                log.info(`Run complete for ${repoName}! ${reviewedPRs.length} PR(s) created.`);
+                this.logSummary(repoName, workerResults, reviewedPRs);
             } else {
-                log.warn('No successful fixes — no PRs will be created');
+                log.warn(`No successful fixes in ${repoName} — no PRs will be created`);
 
-                // Remove "in-progress" labels from failed issues
                 for (const result of workerResults) {
                     if (!result.success) {
-                        await this.github.removeLabel(result.issueNumber, 'in-progress');
+                        await github.removeLabel(result.issueNumber, 'in-progress');
                     }
                 }
             }
         } catch (error: any) {
-            log.error('Super Agent run failed', { error: error.message });
+            log.error(`Failed processing repo ${repoName}`, { error: error.message });
         } finally {
-            this.isProcessing = false;
+            this.processingRepos.delete(repoName);
         }
     }
 
     /**
      * Spawns Worker Agents concurrently, respecting the max concurrency limit.
      */
-    private async spawnWorkers(issues: GitHubIssue[]): Promise<WorkerResult[]> {
+    private async spawnWorkers(issues: GitHubIssue[], github: GitHubClient): Promise<WorkerResult[]> {
         const maxConcurrent = config.agent.maxConcurrentAgents;
         const results: WorkerResult[] = [];
 
@@ -105,7 +131,7 @@ export class SuperAgent {
             );
 
             const batchPromises = batch.map((issue) => {
-                const worker = new WorkerAgent(this.github, this.ai);
+                const worker = new WorkerAgent(github, this.ai);
                 return worker.processIssue(issue);
             });
 
@@ -124,27 +150,27 @@ export class SuperAgent {
     }
 
     /**
-     * Logs a summary of the run.
+     * Logs a summary of the run for a specific repo.
      */
-    private logSummary(workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
+    private logSummary(repoName: string, workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
         console.log('\n' + '='.repeat(60));
-        console.log('  🤖 SUPER AGENT RUN SUMMARY');
+        console.log(`  SUPER AGENT RUN SUMMARY — ${config.github.owner}/${repoName}`);
         console.log('='.repeat(60));
 
-        console.log('\n📋 Issues Processed:');
+        console.log('\nIssues Processed:');
         for (const result of workerResults) {
-            const status = result.success ? '✅' : '❌';
-            console.log(`  ${status} #${result.issueNumber}: ${result.issueTitle}`);
+            const status = result.success ? 'OK' : 'FAIL';
+            console.log(`  [${status}] #${result.issueNumber}: ${result.issueTitle}`);
             if (result.error) {
                 console.log(`     Error: ${result.error}`);
             }
         }
 
         if (reviewedPRs.length > 0) {
-            console.log('\n🔗 Pull Requests Created:');
+            console.log('\nPull Requests Created:');
             for (const pr of reviewedPRs) {
-                const reviewIcon = pr.reviewApproved ? '✅' : '⚠️';
-                console.log(`  ${reviewIcon} PR #${pr.prNumber}: ${pr.prUrl}`);
+                const reviewStatus = pr.reviewApproved ? 'Approved' : 'Needs Review';
+                console.log(`  [${reviewStatus}] PR #${pr.prNumber}: ${pr.prUrl}`);
                 console.log(`     For issue #${pr.issueNumber}: ${pr.issueTitle}`);
             }
         }

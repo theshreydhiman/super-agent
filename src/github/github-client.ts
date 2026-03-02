@@ -24,10 +24,54 @@ export class GitHubClient {
     private owner: string;
     private repo: string;
 
-    constructor() {
+    constructor(owner?: string, repo?: string) {
         this.octokit = new Octokit({ auth: config.github.token });
-        this.owner = config.github.owner;
-        this.repo = config.github.repo;
+        this.owner = owner || config.github.owner;
+        this.repo = repo || config.github.repo;
+    }
+
+    getRepoName(): string {
+        return this.repo;
+    }
+
+    getOwner(): string {
+        return this.owner;
+    }
+
+    /**
+     * Lists all non-archived repositories for the authenticated user.
+     */
+    async listOwnerRepos(): Promise<string[]> {
+        return withRetry(async () => {
+            log.info(`Fetching repos for owner "${this.owner}"`);
+
+            const repos: string[] = [];
+            let page = 1;
+
+            while (true) {
+                const { data } = await this.octokit.repos.listForAuthenticatedUser({
+                    per_page: 100,
+                    page,
+                    sort: 'updated',
+                    direction: 'desc',
+                    affiliation: 'owner',
+                });
+
+                if (data.length === 0) break;
+
+                for (const repo of data) {
+                    if (!repo.archived) {
+                        repos.push(repo.name);
+                    }
+                }
+
+                if (data.length < 100) break;
+                page++;
+            }
+
+            log.info(`Found ${repos.length} active repos for "${this.owner}"`);
+            return repos;
+        }, 'listOwnerRepos');
     }
 
     /**
