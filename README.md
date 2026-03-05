@@ -1,18 +1,18 @@
-# 🤖 Super Agent
+# Super Agent
 
-**AI-powered multi-agent system for automated GitHub issue resolution.**
+**AI-powered multi-agent system for automated GitHub issue resolution with a web dashboard.**
 
-Super Agent watches your GitHub repository for issues tagged with a specific label, dispatches AI-powered worker agents to generate code fixes, has a reviewer agent validate the changes, creates pull requests to your dev branch, and notifies you via email — all fully automated.
+Super Agent watches your GitHub repositories for issues tagged with a configurable label, dispatches AI-powered worker agents to generate code fixes, has a reviewer agent validate the changes, creates pull requests, and notifies you via email — all managed through a web dashboard with GitHub OAuth login.
 
 ---
 
-## ✨ How It Works
+## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    SUPER AGENT                          │
 │                                                         │
-│   Trigger (Webhook / Cron / One-shot)                   │
+│   Trigger (Dashboard UI / Webhook / API)                │
 │       │                                                 │
 │       ▼                                                 │
 │   Fetch issues labeled "ai-agent"                       │
@@ -29,218 +29,273 @@ Super Agent watches your GitHub repository for issues tagged with a specific lab
 │       ▼                                                 │
 │   ┌──────────────────────────────────┐                  │
 │   │  Reviewer Agent                  │                  │
-│   │  • Diff the fix branch vs dev    │                  │
+│   │  • Diff the fix branch vs base   │                  │
 │   │  • AI code review                │                  │
 │   │  • Create pull request           │                  │
 │   └──────────────────────────────────┘                  │
 │       │                                                 │
 │       ▼                                                 │
-│   📧 Email notification with PR summary                 │
+│   Email notification with PR summary                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Prerequisites
+## Features
 
-- **Node.js** ≥ 18
-- **npm** ≥ 9
-- A **GitHub Personal Access Token** with `repo` scope
-- A **Google Gemini API key** ([Get one here](https://aistudio.google.com/apikey))
-- *(Optional)* A **Gmail App Password** for email notifications
+- **Web Dashboard** — Monitor runs, view issues, trigger fixes, and manage settings via a React UI
+- **GitHub OAuth Login** — Secure authentication; each user manages their own credentials
+- **Multi-Provider AI** — Choose between Gemini, OpenAI, Claude, or Groq per user
+- **Per-User Config** — API keys, repo settings, and preferences stored encrypted in MySQL
+- **Single-Issue Targeting** — Fix or retry individual issues from the dashboard
+- **Webhook Support** — Auto-trigger on GitHub issue events
+- **Encrypted Secrets** — All API keys and tokens encrypted with AES-256-GCM
+- **Concurrent Workers** — Process multiple issues in parallel with configurable limits
+- **AI Code Review** — Reviewer agent validates fixes before creating PRs
+- **Email Notifications** — Get notified when PRs are created (via EmailJS)
 
 ---
 
-## 🚀 Setup
+## Prerequisites
 
-### 1. Clone the repository
+- **Node.js** >= 18
+- **MySQL** 8.x
+- A **GitHub OAuth App** (for dashboard login)
+- At least one AI provider API key (Gemini, OpenAI, Claude, or Groq)
+
+---
+
+## Setup
+
+### 1. Clone and install
 
 ```bash
-git clone https://github.com/<your-username>/super-agent.git
+git clone https://github.com/theshreydhiman/super-agent.git
 cd super-agent
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
+cd dashboard && npm install && cd ..
 ```
 
-### 3. Configure environment variables
-
-Copy the example env file and fill in your values:
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Edit `.env` with your values:
 
 ```dotenv
-# ─── GitHub Configuration ───
-GITHUB_TOKEN=ghp_your_personal_access_token
-GITHUB_OWNER=your-github-username
-GITHUB_REPO=your-repo-name
-DEV_BRANCH=dev
+# ─── GitHub OAuth App (required for dashboard login) ───
+GITHUB_CLIENT_ID=your_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_oauth_app_client_secret
 
-# ─── Gemini Configuration ───
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash          # or any compatible Gemini model
+# ─── MySQL Database ───
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=super_agent
 
-# ─── Email Configuration (Gmail SMTP) ───
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password            # Gmail App Password
-NOTIFICATION_EMAIL=your-email@gmail.com
+# ─── Security (required) ───
+ENCRYPTION_KEY=<random-32-byte-hex>    # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+SESSION_SECRET=<random-secret-string>  # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
-# ─── Trigger Configuration ───
-WEBHOOK_MODE=true                      # Enable GitHub webhook server
-CRON_MODE=true                         # Enable cron-based polling
-POLL_INTERVAL_MINUTES=5                # Polling interval (if cron enabled)
-WEBHOOK_PORT=3000                      # Port for webhook server
-WEBHOOK_SECRET=your-webhook-secret     # GitHub webhook secret
+# ─── Server ───
+WEBHOOK_PORT=3001
+DASHBOARD_URL=http://localhost:3001
 
-# ─── Agent Configuration ───
-ISSUE_LABEL=ai-agent                   # Label that triggers the agent
-MAX_CONCURRENT_AGENTS=3                # Max parallel worker agents
+# ─── Default AI Provider (users can override in dashboard settings) ───
+AI_PROVIDER=gemini                     # gemini | openai | claude | groq
+GEMINI_API_KEY=your_key                # Only needed for webhook-triggered runs without user context
+
+# ─── Webhook (optional) ───
+WEBHOOK_SECRET=your_webhook_secret
+WEBHOOK_MODE=true
+
+# ─── GitHub defaults (optional, users configure their own in dashboard) ───
+GITHUB_TOKEN=ghp_your_token
+GITHUB_OWNER=your-username
+ISSUE_LABEL=ai-agent
+DEV_BRANCH=main
 ```
 
-> **Required variables:** `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, and `GEMINI_API_KEY`. The rest have sensible defaults.
+### 3. Create the MySQL database
+
+```sql
+CREATE DATABASE super_agent;
+```
+
+Tables are auto-created on first startup via migrations.
+
+### 4. Create a GitHub OAuth App
+
+1. Go to **GitHub Settings > Developer settings > OAuth Apps > New OAuth App**
+2. Set **Authorization callback URL** to: `http://localhost:3001/auth/github/callback` (or your production URL)
+3. Copy the Client ID and Client Secret to your `.env`
 
 ---
 
-## ▶️ Running the Agent
+## Running
 
-### Development mode (with hot-reload via `tsx`)
+### Development
 
 ```bash
+# Backend (with hot-reload)
 npm run dev
+
+# Dashboard (separate terminal)
+cd dashboard && npm run dev
 ```
 
-### Production mode
+### Production
 
 ```bash
-# Build TypeScript → JavaScript
+# Build both backend and dashboard
 npm run build
+cd dashboard && npm run build && cd ..
 
-# Start the compiled app
+# Start
 npm start
 ```
 
-### One-shot mode
-
-If **both** `WEBHOOK_MODE` and `CRON_MODE` are set to `false`, the agent runs a single sweep and exits — useful for manual or CI-triggered runs.
+The server starts on the configured `WEBHOOK_PORT` (default 3001) and serves:
+- **Dashboard:** `http://localhost:3001`
+- **API:** `http://localhost:3001/api`
+- **Webhook:** `http://localhost:3001/webhook`
+- **Health:** `http://localhost:3001/health`
 
 ---
 
-## 🔧 Trigger Modes
+## Dashboard
 
-| Mode | Description |
+After logging in with GitHub:
+
+| Page | Description |
 |------|-------------|
-| **Webhook** | Starts an Express server on `WEBHOOK_PORT`. Configure a GitHub webhook to send **Issues** events to `http://<host>:<port>/webhook`. The agent runs immediately when a matching issue is opened or labeled. |
-| **Cron** | Polls for new issues every `POLL_INTERVAL_MINUTES` minutes. Also runs once immediately on startup. |
-| **One-shot** | Runs once and exits. Triggered when both Webhook and Cron modes are disabled. |
-
-You can enable **both** Webhook and Cron modes simultaneously.
-
-### Setting up the GitHub Webhook
-
-1. Go to your repo → **Settings** → **Webhooks** → **Add webhook**
-2. **Payload URL:** `http://<your-server>:3000/webhook`
-3. **Content type:** `application/json`
-4. **Secret:** Same value as `WEBHOOK_SECRET` in your `.env`
-5. **Events:** Select **Issues**
-6. Click **Add webhook**
+| **Dashboard** | Overview stats — total runs, issues processed, PRs created, success rate |
+| **Runs** | List of all agent runs with status, duration, and rerun capability |
+| **Issues** | GitHub issues with the configured label — click Fix or Retry per issue |
+| **Settings** | Configure GitHub token, AI provider/key, base branch, notification email |
 
 ---
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 super-agent/
 ├── src/
-│   ├── index.ts                 # Entry point & bootstrap
-│   ├── config.ts                # Environment config & validation
+│   ├── index.ts                 # Entry point & server bootstrap
+│   ├── config.ts                # Environment config defaults
+│   ├── server.ts                # Express app factory (session, routes, SPA)
 │   ├── agents/
 │   │   ├── super-agent.ts       # Orchestrator — manages the full pipeline
 │   │   ├── worker-agent.ts      # Analyzes issues & generates code fixes
 │   │   └── reviewer-agent.ts    # Reviews changes & creates PRs
 │   ├── ai/
-│   │   └── ai-engine.ts         # Gemini AI integration (analyze, fix, review)
+│   │   └── ai-engine.ts         # Multi-provider AI (Gemini/OpenAI/Claude/Groq)
 │   ├── github/
 │   │   └── github-client.ts     # GitHub API wrapper (Octokit)
+│   ├── db/
+│   │   ├── connection.ts        # MySQL pool
+│   │   └── migrate.ts           # Auto-migrations
+│   ├── middleware/
+│   │   ├── auth-middleware.ts    # Session-based auth guard
+│   │   └── error-handler.ts     # Global error handler
+│   ├── repositories/
+│   │   ├── run-repository.ts    # Runs & processed issues data access
+│   │   ├── config-repository.ts # Per-user config (encrypted)
+│   │   └── user-repository.ts   # User accounts
+│   ├── routes/
+│   │   ├── auth-routes.ts       # GitHub OAuth flow
+│   │   ├── run-routes.ts        # Runs API + trigger endpoint
+│   │   ├── issue-routes.ts      # Issues listing from GitHub
+│   │   ├── config-routes.ts     # User settings CRUD
+│   │   └── dashboard-routes.ts  # Stats & recent activity
 │   ├── services/
-│   │   └── email-service.ts     # Email notifications (Nodemailer)
+│   │   ├── user-config.ts       # Per-user runtime config (DB -> .env -> defaults)
+│   │   ├── run-tracker.ts       # DB callbacks for run/issue tracking
+│   │   ├── email-service.ts     # Email notifications (EmailJS)
+│   │   └── encryption.ts        # AES-256-GCM encryption for secrets
 │   ├── triggers/
-│   │   ├── webhook-server.ts    # Express webhook server
-│   │   └── cron-poller.ts       # Cron-based polling trigger
+│   │   └── webhook-server.ts    # GitHub webhook handler
 │   └── utils/
-│       ├── logger.ts            # Structured logger
-│       └── retry.ts             # Retry utility with backoff
+│       ├── logger.ts            # Structured colored logger
+│       └── retry.ts             # Exponential backoff with jitter
+├── dashboard/                   # React + Vite + Tailwind frontend
+│   ├── src/
+│   │   ├── pages/               # Dashboard, Runs, Issues, Config, RunDetail
+│   │   ├── components/          # Layout, StatusBadge, StatsCard, Pagination
+│   │   ├── hooks/               # useFetch
+│   │   └── api/                 # API client with auth redirect
+│   └── ...
 ├── .env.example
-├── .gitignore
 ├── package.json
 └── tsconfig.json
 ```
 
 ---
 
-## 🏷️ How to Use
+## How to Use
 
-1. **Label an issue** in your GitHub repo with `ai-agent` (or your configured `ISSUE_LABEL`).
-2. Super Agent picks up the issue (via webhook or next cron tick).
-3. A **Worker Agent** creates a `fix/issue-<N>` branch, analyzes the issue with AI, reads the relevant files, generates a fix, and commits it.
-4. A **Reviewer Agent** diffs the branch against `dev`, performs an AI code review, and opens a pull request.
-5. You receive an **email notification** with a summary of all PRs created.
-6. **Review and merge** the PR at your convenience.
+1. **Log in** to the dashboard with your GitHub account
+2. **Configure settings** — add your GitHub token, select an AI provider, and enter the API key
+3. **Label an issue** in your repo with `ai-agent` (or your configured label)
+4. **Click Fix** on the Issues page, or wait for a webhook trigger
+5. A Worker Agent creates a `fix/issue-<N>` branch, analyzes the issue with AI, generates a fix, and commits it
+6. A Reviewer Agent diffs the branch, performs an AI code review, and opens a pull request
+7. **Review and merge** the PR at your convenience
 
 ### Labels used by the agent
 
 | Label | Meaning |
 |-------|---------|
-| `ai-agent` | Issue is eligible for automated fixing |
+| `ai-agent` | Issue is eligible for automated fixing (configurable) |
 | `in-progress` | Agent is currently working on the issue |
 | `ai-pr-created` | A PR has been created for this issue |
 
 ---
 
-## 📦 Tech Stack
+## Webhook Setup (Optional)
 
-| Package | Purpose |
-|---------|---------|
-| **TypeScript** | Type-safe codebase |
+For auto-triggering when issues are created or labeled:
+
+1. Go to your repo > **Settings** > **Webhooks** > **Add webhook**
+2. **Payload URL:** `https://<your-server>/webhook`
+3. **Content type:** `application/json`
+4. **Secret:** Same value as `WEBHOOK_SECRET` in your `.env`
+5. **Events:** Select **Issues**
+
+---
+
+## Tech Stack
+
+| Technology | Purpose |
+|-----------|---------|
+| **TypeScript** | Type-safe backend and frontend |
+| **Express** | HTTP server, API routes, session management |
+| **React + Vite** | Dashboard frontend |
+| **Tailwind CSS** | Dashboard styling |
+| **MySQL** | User data, run tracking, encrypted config storage |
 | **@octokit/rest** | GitHub REST API client |
-| **@octokit/webhooks** | Webhook signature verification |
-| **@google/generative-ai** | Google Gemini AI integration |
-| **express** | Webhook HTTP server |
-| **node-cron** | Scheduled polling |
-| **nodemailer** | Email notifications |
-| **simple-git** | Git operations |
-| **dotenv** | Environment variable loading |
+| **Google Generative AI** | Gemini AI provider |
+| **OpenAI SDK** | OpenAI/Groq AI provider |
+| **Anthropic SDK** | Claude AI provider |
+| **express-session** | Session-based authentication |
+| **express-mysql-session** | MySQL session store |
 
 ---
 
-## 📝 Scripts
+## Security Notes
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `dev` | `npm run dev` | Run in development mode with `tsx` |
-| `build` | `npm run build` | Compile TypeScript to `dist/` |
-| `start` | `npm start` | Run the compiled production build |
-| `test` | `npm test` | Run tests with Jest |
-
----
-
-## 🛡️ Security Notes
-
-- **Never commit your `.env` file.** It's already in `.gitignore`.
-- Use a **GitHub fine-grained PAT** with only the permissions you need (`repo` scope).
-- Always set a `WEBHOOK_SECRET` and verify signatures in production.
-- For Gmail, use an [App Password](https://myaccount.google.com/apppasswords), not your actual password.
+- **Never commit your `.env` file** — it's in `.gitignore`
+- All sensitive config values (API keys, tokens) are **encrypted with AES-256-GCM** in the database
+- Set `ENCRYPTION_KEY` and `SESSION_SECRET` to unique random values
+- Use a GitHub fine-grained PAT with only the permissions you need (`repo` scope)
+- Always set a `WEBHOOK_SECRET` for production webhook endpoints
+- Session cookies are set to `secure: true` when `NODE_ENV=production`
 
 ---
 
-## 📄 License
+## License
 
 MIT
