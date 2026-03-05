@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
 import { UserRepository } from '../repositories/user-repository';
@@ -7,23 +8,35 @@ const log = createLogger('AuthRoutes');
 const router = Router();
 const userRepo = new UserRepository();
 
-router.get('/github', (_req: Request, res: Response) => {
+router.get('/github', (req: Request, res: Response) => {
+    const state = crypto.randomBytes(16).toString('hex');
+    req.session.oauthState = state;
+
+    const baseUrl = config.dashboard.url || `${req.protocol}://${req.get('host')}`;
     const params = new URLSearchParams({
         client_id: config.github.clientId,
         redirect_uri: `https://nolan-verminous-nidia.ngrok-free.dev/auth/github/callback`,
         scope: 'read:user user:email repo',
-        state: Math.random().toString(36).substring(2),
+        state,
     });
     res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 });
 
 router.get('/github/callback', async (req: Request, res: Response) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
 
     if (!code) {
         res.status(400).json({ error: 'Missing authorization code' });
         return;
     }
+
+    // Validate OAuth state to prevent CSRF
+    if (!state || state !== req.session.oauthState) {
+        log.warn('OAuth state mismatch');
+        res.status(403).json({ error: 'Invalid OAuth state' });
+        return;
+    }
+    delete req.session.oauthState;
 
     try {
         // Exchange code for access token
@@ -55,6 +68,12 @@ router.get('/github/callback', async (req: Request, res: Response) => {
                 Accept: 'application/vnd.github.v3+json',
             },
         });
+
+        if (!userResponse.ok) {
+            log.error('Failed to fetch GitHub user', { status: userResponse.status });
+            res.status(502).json({ error: 'Failed to fetch GitHub user info' });
+            return;
+        }
 
         const githubUser = await userResponse.json() as any;
 
@@ -97,7 +116,10 @@ router.get('/github/callback', async (req: Request, res: Response) => {
 });
 
 router.post('/logout', (req: Request, res: Response) => {
-    req.session.destroy(() => {
+    req.session.destroy((err) => {
+        if (err) {
+            log.error('Session destroy failed', { error: err.message });
+        }
         res.json({ success: true });
     });
 });

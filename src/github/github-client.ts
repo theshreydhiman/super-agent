@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { config } from '../config';
+import { UserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 import { withRetry } from '../utils/retry';
 
@@ -23,11 +24,13 @@ export class GitHubClient {
     private octokit: Octokit;
     private owner: string;
     private repo: string;
+    private cfg: UserRuntimeConfig | typeof config;
 
-    constructor(owner?: string, repo?: string) {
-        this.octokit = new Octokit({ auth: config.github.token });
-        this.owner = owner || config.github.owner;
-        this.repo = repo || config.github.repo;
+    constructor(owner?: string, repo?: string, userConfig?: UserRuntimeConfig) {
+        this.cfg = userConfig || config;
+        this.octokit = new Octokit({ auth: this.cfg.github.token });
+        this.owner = owner || this.cfg.github.owner;
+        this.repo = repo || this.cfg.github.repo;
     }
 
     getRepoName(): string {
@@ -77,36 +80,38 @@ export class GitHubClient {
     /**
      * Fetches open issues that have the configured label (e.g., "ai-agent")
      * and do NOT already have the "in-progress" or "ai-pr-created" label.
+     * When skipLabelFilter is true (manual rerun), skips the in-progress/ai-pr-created filter.
      */
-    async fetchOpenIssues(): Promise<GitHubIssue[]> {
+    async fetchOpenIssues(options?: { skipLabelFilter?: boolean }): Promise<GitHubIssue[]> {
         return withRetry(async () => {
-            log.info('Fetching open issues', { label: config.github.issueLabel });
+            const skipFilter = options?.skipLabelFilter ?? false;
+            log.info('Fetching open issues', { label: this.cfg.github.issueLabel, skipFilter });
 
-            const data = await this.octokit.issues.listForRepo({
+            const { data: issues } = await this.octokit.issues.listForRepo({
                 owner: this.owner,
                 repo: this.repo,
                 state: 'open',
-                labels: config.github.issueLabel,
+                labels: this.cfg.github.issueLabel,
                 per_page: 50,
             });
 
-            console.log("data", data);
-
-            const issues = data.data;
-
-            // Filter out issues already being processed or completed
+            // Filter out PRs (GitHub API returns PRs in issue listings)
+            // and filter out issues already being processed or completed
             const filtered = issues.filter((issue) => {
+                if (issue.pull_request) return false;
+
+                if (skipFilter) return true;
+
                 const labelNames = issue.labels.map((l) =>
                     typeof l === 'string' ? l : l.name || ''
                 );
                 return (
                     !labelNames.includes('in-progress') &&
-                    !labelNames.includes('ai-pr-created') &&
-                    !issue.pull_request // exclude PRs that show up as issues
+                    !labelNames.includes('ai-pr-created')
                 );
             });
 
-            log.info(`Found ${filtered.length} actionable issues`);
+            log.info(`Found ${filtered.length} actionable issues (of ${issues.length} total)`);
 
             return filtered.map((issue) => ({
                 number: issue.number,
@@ -123,7 +128,7 @@ export class GitHubClient {
     /**
      * Creates a new branch from the specified base branch.
      */
-    async createBranch(branchName: string, baseBranch: string = config.github.devBranch): Promise<void> {
+    async createBranch(branchName: string, baseBranch: string = this.cfg.github.devBranch): Promise<void> {
         return withRetry(async () => {
             log.info(`Creating branch "${branchName}" from "${baseBranch}"`);
 
@@ -146,7 +151,7 @@ export class GitHubClient {
             } catch (error: any) {
                 // If branch already exists, update it to the latest base SHA
                 if (error.status === 422 && error.message?.includes('Reference already exists')) {
-                    log.info(`Branch "${branchName}" already exists, reusing it`);
+                    log.info(`Branch "${branchName}" already exists, resetting to latest "${baseBranch}"`);
                     await this.octokit.git.updateRef({
                         owner: this.owner,
                         repo: this.repo,
@@ -165,7 +170,7 @@ export class GitHubClient {
     /**
      * Gets the content of a file from a specific branch.
      */
-    async getFileContent(filePath: string, branch: string = config.github.devBranch): Promise<string> {
+    async getFileContent(filePath: string, branch: string = this.cfg.github.devBranch): Promise<string> {
         return withRetry(async () => {
             const { data } = await this.octokit.repos.getContent({
                 owner: this.owner,
@@ -305,7 +310,7 @@ export class GitHubClient {
         body: string
     ): Promise<{ number: number; url: string }> {
         return withRetry(async () => {
-            log.info(`Creating PR: "${head}" → "${base}"`);
+            log.info(`Creating PR: "${head}" -> "${base}"`);
 
             const { data: pr } = await this.octokit.pulls.create({
                 owner: this.owner,
@@ -352,7 +357,7 @@ export class GitHubClient {
     }
 
     /**
-     * Removes a label from an issue.
+     * Removes a label from an issue. Logs a warning on failure instead of throwing.
      */
     async removeLabel(issueNumber: number, label: string): Promise<void> {
         try {
@@ -363,15 +368,20 @@ export class GitHubClient {
                 name: label,
             });
             log.info(`Removed label "${label}" from issue #${issueNumber}`);
-        } catch {
-            // Label might not exist, that's fine
+        } catch (error: any) {
+            // 404 means label wasn't present — that's fine
+            if (error.status === 404) {
+                log.info(`Label "${label}" was not present on issue #${issueNumber}`);
+            } else {
+                log.warn(`Failed to remove label "${label}" from issue #${issueNumber}`, { error: error.message });
+            }
         }
     }
 
     /**
      * Gets the repository file tree (for providing context to AI).
      */
-    async getRepoTree(branch: string = config.github.devBranch): Promise<string[]> {
+    async getRepoTree(branch: string = this.cfg.github.devBranch): Promise<string[]> {
         return withRetry(async () => {
             const { data } = await this.octokit.git.getTree({
                 owner: this.owner,
@@ -379,6 +389,10 @@ export class GitHubClient {
                 tree_sha: branch,
                 recursive: 'true',
             });
+
+            if (data.truncated) {
+                log.warn('Repository tree was truncated (very large repo) — some files may be missing from AI context');
+            }
 
             return data.tree
                 .filter((item) => item.type === 'blob' && item.path)
@@ -407,50 +421,5 @@ export class GitHubClient {
                 status: file.status || 'unknown',
             }));
         }, 'compareBranches');
-    }
-
-    /**
-     * Checks if a branch can be merged into another without conflicts.
-     */
-    async checkMergeability(
-        base: string,
-        head: string
-    ): Promise<{ mergeable: boolean; conflictFiles: string[] }> {
-        try {
-            // Create a temporary PR to test mergeability
-            const { data: pr } = await this.octokit.pulls.create({
-                owner: this.owner,
-                repo: this.repo,
-                head,
-                base,
-                title: `[TEMP] Merge check: ${head} → ${base}`,
-                body: 'Temporary PR for merge conflict detection. Will be closed automatically.',
-            });
-
-            // Wait a moment for GitHub to compute mergeability
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-
-            const { data: prData } = await this.octokit.pulls.get({
-                owner: this.owner,
-                repo: this.repo,
-                pull_number: pr.number,
-            });
-
-            // Close the temp PR
-            await this.octokit.pulls.update({
-                owner: this.owner,
-                repo: this.repo,
-                pull_number: pr.number,
-                state: 'closed',
-            });
-
-            return {
-                mergeable: prData.mergeable ?? true,
-                conflictFiles: [], // GitHub doesn't expose conflicting files directly
-            };
-        } catch (error: any) {
-            log.warn('Merge check failed, assuming mergeable', { error: error.message });
-            return { mergeable: true, conflictFiles: [] };
-        }
     }
 }

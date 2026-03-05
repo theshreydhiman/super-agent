@@ -16,7 +16,12 @@ const DEFAULT_OPTIONS: RetryOptions = {
 
 /**
  * Wraps an async function with exponential backoff retry logic.
- * Useful for handling GitHub API rate limits and Gemini transient errors.
+ * Useful for handling GitHub API rate limits and AI provider transient errors.
+ *
+ * - 429 rate limits: retried with Retry-After header respected if present
+ * - 429 quota exhaustion (e.g. "quota exceeded"): fails immediately
+ * - 401/403 auth errors: fails immediately
+ * - All other errors: retried with exponential backoff
  */
 export async function withRetry<T>(
     fn: () => Promise<T>,
@@ -29,23 +34,37 @@ export async function withRetry<T>(
         try {
             return await fn();
         } catch (error: any) {
-            // Don't retry on quota exhaustion or authentication errors — they won't recover
             const message = error.message || '';
             const status = error.status || error.statusCode;
-            const isQuotaError = status === 429 && /quota|exceeded.*limit/i.test(message);
-            const isAuthError = status === 401 || status === 403;
 
-            if (isQuotaError || isAuthError) {
-                log.error(`${label}: Non-retryable error (${isQuotaError ? 'quota exhausted' : 'auth failed'}), failing immediately`, {
-                    error: message,
-                });
+            // Auth errors never recover — fail immediately
+            const isAuthError = status === 401 || status === 403;
+            if (isAuthError) {
+                log.error(`${label}: Auth error (${status}), failing immediately`, { error: message });
                 throw error;
             }
 
+            // 429: distinguish between transient rate limits (retryable) and hard quota exhaustion (not retryable)
+            if (status === 429) {
+                const isQuotaExhausted = /quota|exceeded.*limit|billing/i.test(message);
+                if (isQuotaExhausted) {
+                    log.error(`${label}: Quota exhausted, failing immediately`, { error: message });
+                    throw error;
+                }
+
+                // Transient rate limit — respect Retry-After header if present
+                const retryAfter = error.response?.headers?.['retry-after'];
+                if (retryAfter && attempt <= opts.maxRetries) {
+                    const waitMs = Math.min(parseInt(retryAfter, 10) * 1000 || opts.baseDelayMs, opts.maxDelayMs);
+                    log.warn(`${label}: Rate limited (429), waiting ${Math.round(waitMs)}ms (Retry-After)`, { error: message });
+                    await new Promise((resolve) => setTimeout(resolve, waitMs));
+                    continue;
+                }
+            }
+
+            // Last attempt — throw
             if (attempt > opts.maxRetries) {
-                log.error(`${label}: All ${opts.maxRetries} retries exhausted`, {
-                    error: message,
-                });
+                log.error(`${label}: All ${opts.maxRetries} retries exhausted`, { error: message });
                 throw error;
             }
 
@@ -54,7 +73,7 @@ export async function withRetry<T>(
                 opts.maxDelayMs
             );
 
-            log.warn(`${label}: Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms`, {
+            log.warn(`${label}: Attempt ${attempt}/${opts.maxRetries + 1} failed, retrying in ${Math.round(delay)}ms`, {
                 error: message,
             });
 

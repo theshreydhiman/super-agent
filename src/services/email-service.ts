@@ -1,5 +1,6 @@
 import emailjs from '@emailjs/nodejs';
 import { config } from '../config';
+import { UserRuntimeConfig } from './user-config';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('EmailService');
@@ -14,8 +15,10 @@ interface PRInfo {
 }
 
 export class EmailService {
-  constructor() {
-    // Nothing to initialize — EmailJS uses per-request auth
+  private cfg: UserRuntimeConfig | typeof config;
+
+  constructor(userConfig?: UserRuntimeConfig) {
+    this.cfg = userConfig || config;
   }
 
   /**
@@ -23,14 +26,14 @@ export class EmailService {
    * via the EmailJS service.
    */
   async sendPRNotification(prs: PRInfo[]): Promise<void> {
-    const { serviceId, templateId, publicKey, privateKey } = config.emailjs;
+    const { serviceId, templateId, publicKey, privateKey } = this.cfg.emailjs;
 
     if (!serviceId || !templateId || !publicKey) {
       log.warn('EmailJS not fully configured, skipping notification');
       return;
     }
 
-    const repoFullName = `${config.github.owner}/${config.github.repo}`;
+    const repoFullName = `${this.cfg.github.owner}/${this.cfg.github.repo}`;
     const prCount = prs.length;
 
     // Build a plain-text summary for the template

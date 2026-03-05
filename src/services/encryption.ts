@@ -5,12 +5,21 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
+// Cache the derived key so scryptSync is only called once per process lifetime
+let cachedKey: Buffer | null = null;
+
 function getKey(): Buffer {
+    if (cachedKey) return cachedKey;
+
     const key = config.encryptionKey;
-    if (!key) {
-        throw new Error('ENCRYPTION_KEY is required for storing secrets');
+    if (!key || key === 'default-encryption-key-change-me') {
+        throw new Error(
+            'ENCRYPTION_KEY must be set to a secure value. ' +
+            'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+        );
     }
-    return crypto.scryptSync(key, 'super-agent-salt', 32);
+    cachedKey = crypto.scryptSync(key, 'super-agent-salt', 32);
+    return cachedKey;
 }
 
 export function encrypt(plaintext: string): string {
@@ -48,6 +57,6 @@ export function decrypt(ciphertext: string): string {
 }
 
 export function maskSecret(value: string): string {
-    if (value.length <= 8) return '****';
+    if (!value || value.length <= 8) return '****';
     return value.substring(0, 4) + '****' + value.substring(value.length - 4);
 }

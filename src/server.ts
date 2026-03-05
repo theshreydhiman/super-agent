@@ -35,33 +35,42 @@ export function createApp(): express.Application {
         expiration: 86400000,
     });
 
+    const isProduction = process.env.NODE_ENV === 'production';
+
     app.use(session({
         store: sessionStore,
         secret: config.sessionSecret,
         resave: false,
         saveUninitialized: false,
+        proxy: isProduction, // Trust proxy (ngrok, load balancer) for secure cookies
         cookie: {
-            secure: false, // Set to true in production with HTTPS
+            secure: isProduction,
             httpOnly: true,
             maxAge: 24 * 60 * 60 * 1000, // 24 hours
+            sameSite: 'lax',
         },
     }));
 
-    // JSON body parser for API routes
-    app.use(express.json());
+    // JSON body parser for API routes — skip /webhook so raw body is preserved for signature verification
+    app.use((req, res, next) => {
+        if (req.path === '/webhook') return next();
+        express.json()(req, res, next);
+    });
 
     // Auth routes (no JSON body parser needed for OAuth redirects)
     app.use('/auth', authRoutes);
 
     // API auth check
-    app.get('/api/auth/me', (req, res) => {
+    app.get('/api/auth/me', async (req, res) => {
         if (!req.session?.userId) {
             res.status(401).json({ error: 'Not authenticated' });
             return;
         }
-        const { UserRepository } = require('./repositories/user-repository');
-        const userRepo = new UserRepository();
-        userRepo.findById(req.session.userId).then((user: any) => {
+
+        try {
+            const { UserRepository } = require('./repositories/user-repository');
+            const userRepo = new UserRepository();
+            const user = await userRepo.findById(req.session.userId);
             if (!user) {
                 res.status(401).json({ error: 'User not found' });
                 return;
@@ -72,9 +81,10 @@ export function createApp(): express.Application {
                 github_avatar_url: user.github_avatar_url,
                 email: user.email,
             });
-        }).catch((err: any) => {
-            res.status(500).json({ error: err.message });
-        });
+        } catch (err: any) {
+            log.error('Failed to fetch user for /api/auth/me', { error: err.message });
+            res.status(500).json({ error: 'Failed to fetch user info' });
+        }
     });
 
     // API routes
@@ -83,13 +93,21 @@ export function createApp(): express.Application {
     app.use('/api/issues', issueRoutes);
     app.use('/api/config', configRoutes);
 
+    // NOTE: /health and /webhook routes are registered by WebhookServer AFTER createApp().
+    // The SPA fallback below explicitly skips those paths so they remain reachable.
+
     // Serve static dashboard in production
     const dashboardPath = path.join(__dirname, '..', 'dashboard', 'dist');
     app.use(express.static(dashboardPath));
 
-    // SPA fallback — serve index.html for any non-API route
+    // SPA fallback — serve index.html for any non-API, non-health, non-webhook route
     app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/webhook') || req.path.startsWith('/health')) {
+        if (
+            req.path.startsWith('/api') ||
+            req.path.startsWith('/auth') ||
+            req.path.startsWith('/webhook') ||
+            req.path === '/health'
+        ) {
             next();
             return;
         }

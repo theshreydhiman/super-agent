@@ -31,7 +31,7 @@ export class RunTracker {
                     repo_name: repoName,
                     issues_found: issuesFound,
                 });
-                log.info(`Run ${runId} started for ${repoOwner}/${repoName}`);
+                log.info(`Run ${runId} started for ${repoOwner}/${repoName} (${issuesFound} issues)`);
                 return runId;
             },
 
@@ -45,34 +45,35 @@ export class RunTracker {
                     issue_title: issueTitle,
                     issue_url: `https://github.com/${repoOwner}/${repoName}/issues/${issueNumber}`,
                 });
+                log.info(`Tracking issue #${issueNumber} (DB id: ${issueId}) in run ${runId}`);
                 return issueId;
             },
 
-            onIssueProcessed: async (issueId: number, result: WorkerResult): Promise<void> => {
-                await this.runRepo.updateProcessedIssue(issueId, {
+            onIssueProcessed: async (issueDbId: number, result: WorkerResult): Promise<void> => {
+                // Update issue status and branch
+                await this.runRepo.updateProcessedIssue(issueDbId, {
                     status: result.success ? 'success' : 'failed',
-                    branch_name: result.branchName,
-                    error_message: result.error,
+                    branch_name: result.branchName || null,
+                    error_message: result.error || null,
                 });
 
-                // Update run counts
-                const issue = (await this.runRepo.getIssuesByRunId(0)).find(i => i.id === issueId);
+                // Atomically increment issues_processed — uses SQL increment, safe for concurrency
+                const issue = await this.runRepo.findProcessedIssueById(issueDbId);
                 if (issue) {
-                    const run = await this.runRepo.findById(issue.run_id);
-                    if (run) {
-                        await this.runRepo.updateRun(run.id, {
-                            issues_processed: run.issues_processed + 1,
-                        });
-                    }
+                    await this.runRepo.incrementIssuesProcessed(issue.run_id);
+                } else {
+                    log.warn(`Processed issue DB record ${issueDbId} not found during increment`);
                 }
             },
 
-            onPRCreated: async (issueId: number, pr: ReviewedPR): Promise<void> => {
-                await this.runRepo.updateProcessedIssue(issueId, {
+            onPRCreated: async (issueDbId: number, pr: ReviewedPR): Promise<void> => {
+                await this.runRepo.updateProcessedIssue(issueDbId, {
+                    status: 'success',
                     pr_number: pr.prNumber,
                     pr_url: pr.prUrl,
                     review_approved: pr.reviewApproved,
                 });
+                log.info(`PR #${pr.prNumber} recorded for issue DB id ${issueDbId}`);
             },
 
             onRunComplete: async (runId: number, status: 'completed' | 'failed', error?: string): Promise<void> => {
@@ -82,9 +83,9 @@ export class RunTracker {
                 await this.runRepo.updateRun(runId, {
                     status,
                     prs_created: prsCreated,
-                    error_message: error,
+                    error_message: error || null,
                 });
-                log.info(`Run ${runId} ${status}`);
+                log.info(`Run ${runId} ${status} — ${prsCreated} PR(s) created, ${issues.length} issue(s) processed`);
             },
         };
     }

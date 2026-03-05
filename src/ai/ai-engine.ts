@@ -2,6 +2,7 @@ import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config';
+import { UserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 import { withRetry } from '../utils/retry';
 
@@ -26,8 +27,38 @@ export interface ReviewResult {
     suggestions: string[];
 }
 
+/**
+ * Safely parse a JSON string from an LLM response.
+ * Handles common issues like markdown code fences wrapping the JSON.
+ */
+function safeParseJSON<T>(raw: string, label: string): T {
+    let text = raw.trim();
+
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    const fenceMatch = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+    if (fenceMatch) {
+        text = fenceMatch[1].trim();
+    }
+
+    if (!text) {
+        throw new Error(`${label}: AI returned empty response`);
+    }
+
+    try {
+        return JSON.parse(text) as T;
+    } catch (err: any) {
+        log.error(`${label}: Failed to parse AI JSON response`, {
+            error: err.message,
+            responsePreview: text.substring(0, 300),
+        });
+        throw new Error(`${label}: AI returned invalid JSON — ${err.message}`);
+    }
+}
+
 export class AIEngine {
     private provider: 'gemini' | 'openai' | 'claude' | 'groq';
+    private cfg: UserRuntimeConfig | typeof config;
+    private initialized = false;
 
     // Gemini
     private genAI?: GoogleGenerativeAI;
@@ -41,34 +72,47 @@ export class AIEngine {
     private anthropic?: Anthropic;
     private claudeModel?: string;
 
-    constructor() {
-        this.provider = config.aiProvider;
+    constructor(userConfig?: UserRuntimeConfig) {
+        this.cfg = userConfig || config;
+        this.provider = this.cfg.aiProvider;
+        log.info(`AI Engine created (provider: ${this.provider}, lazy init)`);
+    }
+
+    /** Lazily initializes the AI client on first use. Throws if API key is missing. */
+    private ensureInitialized(): void {
+        if (this.initialized) return;
 
         if (this.provider === 'openai') {
-            this.openai = new OpenAI({ apiKey: config.openai.apiKey });
-            this.openaiModel = config.openai.model;
+            if (!this.cfg.openai.apiKey) throw new Error('OpenAI API key is required. Set it in Settings.');
+            this.openai = new OpenAI({ apiKey: this.cfg.openai.apiKey });
+            this.openaiModel = this.cfg.openai.model;
             log.info(`AI Engine initialized with OpenAI (${this.openaiModel})`);
         } else if (this.provider === 'groq') {
+            if (!this.cfg.groq.apiKey) throw new Error('Groq API key is required. Set it in Settings.');
             this.openai = new OpenAI({
-                apiKey: config.groq.apiKey,
+                apiKey: this.cfg.groq.apiKey,
                 baseURL: 'https://api.groq.com/openai/v1',
             });
-            this.openaiModel = config.groq.model;
+            this.openaiModel = this.cfg.groq.model;
             log.info(`AI Engine initialized with Groq (${this.openaiModel})`);
         } else if (this.provider === 'claude') {
-            this.anthropic = new Anthropic({ apiKey: config.claude.apiKey });
-            this.claudeModel = config.claude.model;
+            if (!this.cfg.claude.apiKey) throw new Error('Claude API key is required. Set it in Settings.');
+            this.anthropic = new Anthropic({ apiKey: this.cfg.claude.apiKey });
+            this.claudeModel = this.cfg.claude.model;
             log.info(`AI Engine initialized with Claude (${this.claudeModel})`);
         } else {
-            this.genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+            if (!this.cfg.gemini.apiKey) throw new Error('Gemini API key is required. Set it in Settings.');
+            this.genAI = new GoogleGenerativeAI(this.cfg.gemini.apiKey);
             this.geminiModel = this.genAI.getGenerativeModel({
-                model: config.gemini.model,
+                model: this.cfg.gemini.model,
                 generationConfig: {
                     responseMimeType: 'application/json',
                 },
             });
-            log.info(`AI Engine initialized with Gemini (${config.gemini.model})`);
+            log.info(`AI Engine initialized with Gemini (${this.cfg.gemini.model})`);
         }
+
+        this.initialized = true;
     }
 
     private async callLLM(opts: {
@@ -78,6 +122,8 @@ export class AIEngine {
         jsonMode: boolean;
         maxTokens?: number;
     }): Promise<string> {
+        this.ensureInitialized();
+
         if (this.provider === 'openai' || this.provider === 'groq') {
             const response = await this.openai!.chat.completions.create({
                 model: this.openaiModel!,
@@ -89,7 +135,12 @@ export class AIEngine {
                 max_tokens: opts.maxTokens,
                 ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
             });
-            return response.choices[0]?.message?.content || '';
+
+            const content = response.choices[0]?.message?.content;
+            if (!content) {
+                throw new Error('AI returned empty response (no content in choices)');
+            }
+            return content;
         } else if (this.provider === 'claude') {
             const prompt = opts.jsonMode
                 ? `${opts.userPrompt}\n\nIMPORTANT: Respond ONLY with valid JSON, no other text.`
@@ -106,11 +157,14 @@ export class AIEngine {
             });
 
             const block = response.content[0];
-            return block.type === 'text' ? block.text : '';
+            if (!block || block.type !== 'text' || !block.text) {
+                throw new Error('AI returned empty response (no text block)');
+            }
+            return block.text;
         } else {
             const model = opts.jsonMode
                 ? this.geminiModel!
-                : this.genAI!.getGenerativeModel({ model: config.gemini.model });
+                : this.genAI!.getGenerativeModel({ model: this.cfg.gemini.model });
 
             const result = await model.generateContent({
                 contents: [
@@ -122,7 +176,12 @@ export class AIEngine {
                     ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}),
                 },
             });
-            return result.response.text();
+
+            const text = result.response.text();
+            if (!text) {
+                throw new Error('AI returned empty response (no text in Gemini response)');
+            }
+            return text;
         }
     }
 
@@ -169,7 +228,21 @@ ${repoTree.join('\n')}
                 jsonMode: true,
             });
 
-            const parsed = JSON.parse(content) as AnalysisResult;
+            const parsed = safeParseJSON<AnalysisResult>(content, 'analyzeIssue');
+
+            // Validate response shape
+            if (!Array.isArray(parsed.targetFiles)) {
+                throw new Error('analyzeIssue: AI response missing targetFiles array');
+            }
+
+            // Filter target files to only those in the repo tree
+            const treeSet = new Set(repoTree);
+            const validFiles = parsed.targetFiles.filter(f => treeSet.has(f));
+            if (validFiles.length === 0 && parsed.targetFiles.length > 0) {
+                log.warn('AI suggested files not found in repo tree', { suggested: parsed.targetFiles });
+            }
+
+            parsed.targetFiles = validFiles;
 
             log.info('Analysis complete', {
                 targetFiles: parsed.targetFiles,
@@ -238,15 +311,19 @@ ${filesContext}`;
                 maxTokens: 16000,
             });
 
-            const parsed = JSON.parse(content);
+            const parsed = safeParseJSON<{ changes?: any[] }>(content, 'generateFix');
 
-            const changes: CodeChange[] = (parsed.changes || [])
+            if (!Array.isArray(parsed.changes)) {
+                throw new Error('generateFix: AI response missing changes array');
+            }
+
+            const changes: CodeChange[] = parsed.changes
                 .filter((c: any) => c.filePath && typeof c.newContent === 'string')
                 .map((c: any) => ({
                     filePath: c.filePath,
                     originalContent: fileContents[c.filePath] || null,
                     newContent: c.newContent,
-                    explanation: c.explanation || '',
+                    explanation: c.explanation || 'No explanation provided',
                 }));
 
             if (changes.length === 0) {
@@ -308,7 +385,19 @@ ${diffsContext}`;
                 jsonMode: true,
             });
 
-            const parsed = JSON.parse(content) as ReviewResult;
+            const parsed = safeParseJSON<ReviewResult>(content, 'reviewChanges');
+
+            // Validate and set defaults
+            if (typeof parsed.approved !== 'boolean') {
+                log.warn('AI review response missing approved field, defaulting to false');
+                parsed.approved = false;
+            }
+            if (!parsed.feedback) {
+                parsed.feedback = 'No feedback provided';
+            }
+            if (!Array.isArray(parsed.suggestions)) {
+                parsed.suggestions = [];
+            }
 
             log.info('Review complete', {
                 approved: parsed.approved,

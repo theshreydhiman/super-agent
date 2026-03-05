@@ -32,9 +32,10 @@ interface RunDetail {
 
 export default function RunDetailPage() {
     const { id } = useParams();
-    const { data: run, loading } = useFetch<RunDetail>(`/api/runs/${id}`);
+    const { data: run, loading, error } = useFetch<RunDetail>(`/api/runs/${id}`);
 
     if (loading) return <div className="text-gray-500">Loading...</div>;
+    if (error) return <div className="text-red-400">Failed to load run: {error}</div>;
     if (!run) return <div className="text-gray-500">Run not found.</div>;
 
     return (

@@ -74,6 +74,7 @@ export default function ConfigPage() {
                 body: JSON.stringify(changed),
             });
             setConfigs(updated);
+            setForm(updated);
             setMessage('Settings saved successfully.');
         } catch (err: any) {
             setMessage(`Error saving: ${err.message}`);
@@ -100,6 +101,8 @@ export default function ConfigPage() {
 
     if (loading) return <div className="text-gray-500">Loading...</div>;
 
+    const provider = form.ai_provider || 'gemini';
+
     return (
         <div className="max-w-3xl">
             <h2 className="text-2xl font-bold text-white mb-6">Settings</h2>
@@ -114,6 +117,7 @@ export default function ConfigPage() {
             <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
                 <h3 className="text-lg font-semibold text-white mb-4">GitHub Settings</h3>
                 <div className="space-y-4">
+                    <Field label="GitHub Personal Access Token" value={form.github_token || ''} onChange={(v) => updateField('github_token', v)} placeholder="ghp_... or github_pat_..." type="password" />
                     <Field label="GitHub Owner" value={form.github_owner || ''} onChange={(v) => updateField('github_owner', v)} placeholder="your-username" />
                     <div>
                         <label className="block text-sm text-gray-400 mb-1">Target Repository</label>
@@ -132,7 +136,7 @@ export default function ConfigPage() {
                             <Field label="" value={form.github_repo || ''} onChange={(v) => updateField('github_repo', v)} placeholder="repo-name (empty for all repos)" noLabel />
                         )}
                     </div>
-                    <Field label="Dev Branch" value={form.dev_branch || 'dev'} onChange={(v) => updateField('dev_branch', v)} placeholder="dev" />
+                    <Field label="Dev Branch" value={form.dev_branch || 'main'} onChange={(v) => updateField('dev_branch', v)} placeholder="main" />
                     <Field label="Issue Label" value={form.issue_label || 'ai-agent'} onChange={(v) => updateField('issue_label', v)} placeholder="ai-agent" />
                     <Field label="Webhook Secret" value={form.webhook_secret || ''} onChange={(v) => updateField('webhook_secret', v)} placeholder="your-webhook-secret" type="password" />
                 </div>
@@ -145,7 +149,7 @@ export default function ConfigPage() {
                     <div>
                         <label className="block text-sm text-gray-400 mb-1">Provider</label>
                         <select
-                            value={form.ai_provider || 'gemini'}
+                            value={provider}
                             onChange={(e) => updateField('ai_provider', e.target.value)}
                             className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
                         >
@@ -156,17 +160,29 @@ export default function ConfigPage() {
                         </select>
                     </div>
 
-                    {form.ai_provider === 'gemini' || !form.ai_provider ? (
-                        <Field label="Gemini API Key" value={form.gemini_api_key || ''} onChange={(v) => updateField('gemini_api_key', v)} placeholder="Enter API key" type="password" />
+                    {provider === 'gemini' ? (
+                        <>
+                            <Field label="Gemini API Key" value={form.gemini_api_key || ''} onChange={(v) => updateField('gemini_api_key', v)} placeholder="Enter API key" type="password" />
+                            <Field label="Gemini Model" value={form.gemini_model || 'gemini-2.0-flash'} onChange={(v) => updateField('gemini_model', v)} placeholder="gemini-2.0-flash" />
+                        </>
                     ) : null}
-                    {form.ai_provider === 'openai' ? (
-                        <Field label="OpenAI API Key" value={form.openai_api_key || ''} onChange={(v) => updateField('openai_api_key', v)} placeholder="sk-..." type="password" />
+                    {provider === 'openai' ? (
+                        <>
+                            <Field label="OpenAI API Key" value={form.openai_api_key || ''} onChange={(v) => updateField('openai_api_key', v)} placeholder="sk-..." type="password" />
+                            <Field label="OpenAI Model" value={form.openai_model || 'gpt-4o'} onChange={(v) => updateField('openai_model', v)} placeholder="gpt-4o" />
+                        </>
                     ) : null}
-                    {form.ai_provider === 'claude' ? (
-                        <Field label="Claude API Key" value={form.claude_api_key || ''} onChange={(v) => updateField('claude_api_key', v)} placeholder="sk-ant-..." type="password" />
+                    {provider === 'claude' ? (
+                        <>
+                            <Field label="Claude API Key" value={form.claude_api_key || ''} onChange={(v) => updateField('claude_api_key', v)} placeholder="sk-ant-..." type="password" />
+                            <Field label="Claude Model" value={form.claude_model || 'claude-sonnet-4-6'} onChange={(v) => updateField('claude_model', v)} placeholder="claude-sonnet-4-6" />
+                        </>
                     ) : null}
-                    {form.ai_provider === 'groq' ? (
-                        <Field label="Groq API Key" value={form.groq_api_key || ''} onChange={(v) => updateField('groq_api_key', v)} placeholder="gsk_..." type="password" />
+                    {provider === 'groq' ? (
+                        <>
+                            <Field label="Groq API Key" value={form.groq_api_key || ''} onChange={(v) => updateField('groq_api_key', v)} placeholder="gsk_..." type="password" />
+                            <Field label="Groq Model" value={form.groq_model || 'llama-3.3-70b-versatile'} onChange={(v) => updateField('groq_model', v)} placeholder="llama-3.3-70b-versatile" />
+                        </>
                     ) : null}
                 </div>
             </section>

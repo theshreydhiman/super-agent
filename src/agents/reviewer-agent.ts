@@ -2,6 +2,7 @@ import { GitHubClient } from '../github/github-client';
 import { AIEngine } from '../ai/ai-engine';
 import { EmailService } from '../services/email-service';
 import { WorkerResult } from './worker-agent';
+import { UserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
 
@@ -20,11 +21,13 @@ export class ReviewerAgent {
     private github: GitHubClient;
     private ai: AIEngine;
     private emailService: EmailService;
+    private cfg: UserRuntimeConfig | typeof config;
 
-    constructor(github: GitHubClient, ai: AIEngine, emailService: EmailService) {
+    constructor(github: GitHubClient, ai: AIEngine, emailService: EmailService, userConfig?: UserRuntimeConfig) {
         this.github = github;
         this.ai = ai;
         this.emailService = emailService;
+        this.cfg = userConfig || config;
     }
 
     /**
@@ -42,7 +45,7 @@ export class ReviewerAgent {
             return [];
         }
 
-        log.info(`📝 Reviewing ${successfulResults.length} completed fixes...`);
+        log.info(`Reviewing ${successfulResults.length} completed fixes...`);
 
         const reviewedPRs: ReviewedPR[] = [];
 
@@ -63,7 +66,7 @@ export class ReviewerAgent {
         if (reviewedPRs.length > 0) {
             try {
                 await this.emailService.sendPRNotification(reviewedPRs);
-                log.info(`📧 Email notification sent for ${reviewedPRs.length} PRs`);
+                log.info(`Email notification sent for ${reviewedPRs.length} PRs`);
             } catch (error: any) {
                 log.error('Failed to send email notification', { error: error.message });
             }
@@ -77,7 +80,7 @@ export class ReviewerAgent {
 
         // Step 1: Get the diff between dev and the fix branch
         const diffs = await this.github.compareBranches(
-            config.github.devBranch,
+            this.cfg.github.devBranch,
             result.branchName
         );
 
@@ -86,10 +89,10 @@ export class ReviewerAgent {
             return null;
         }
 
-        // Step 2: Review the changes with AI
+        // Step 2: Review the changes with AI (pass actual issue body for context)
         const review = await this.ai.reviewChanges(
             result.issueTitle,
-            null, // We already know the context
+            result.issueBody,
             diffs
         );
 
@@ -100,15 +103,15 @@ export class ReviewerAgent {
 
         // Step 3: Comment review feedback on the issue
         const reviewComment =
-            `🤖 **AI Code Review for branch \`${result.branchName}\`**\n\n` +
-            `**Status:** ${review.approved ? '✅ Approved' : '⚠️ Needs attention'}\n\n` +
+            `**AI Code Review for branch \`${result.branchName}\`**\n\n` +
+            `**Status:** ${review.approved ? 'Approved' : 'Needs attention'}\n\n` +
             `**Feedback:** ${review.feedback}\n\n` +
             (review.suggestions.length > 0
                 ? `**Suggestions:**\n${review.suggestions.map((s) => `- ${s}`).join('\n')}\n\n`
                 : '') +
             (review.approved
-                ? '✅ A pull request will be created for this fix.'
-                : '⚠️ A PR will still be created, but please review the suggestions above.');
+                ? 'A pull request will be created for this fix.'
+                : 'A PR will still be created, but please review the suggestions above.');
 
         await this.github.addIssueComment(result.issueNumber, reviewComment);
 
@@ -122,16 +125,20 @@ export class ReviewerAgent {
         // Step 5: Create the PR (even if review has suggestions — let the human decide)
         const pr = await this.github.createPullRequest(
             result.branchName,
-            config.github.devBranch,
+            this.cfg.github.devBranch,
             `fix(#${result.issueNumber}): ${result.issueTitle}`,
             prBody
         );
 
         // Step 6: Update labels
-        await this.github.removeLabel(result.issueNumber, 'in-progress');
-        await this.github.addLabel(result.issueNumber, 'ai-pr-created');
+        try {
+            await this.github.removeLabel(result.issueNumber, 'in-progress');
+            await this.github.addLabel(result.issueNumber, 'ai-pr-created');
+        } catch (labelErr: any) {
+            log.warn(`Failed to update labels for issue #${result.issueNumber}`, { error: labelErr.message });
+        }
 
-        log.info(`✅ PR #${pr.number} created for issue #${result.issueNumber}: ${pr.url}`);
+        log.info(`PR #${pr.number} created for issue #${result.issueNumber}: ${pr.url}`);
 
         return {
             issueNumber: result.issueNumber,

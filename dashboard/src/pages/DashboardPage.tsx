@@ -23,12 +23,18 @@ interface Run {
 }
 
 export default function DashboardPage() {
-    const { data: stats, loading: statsLoading } = useFetch<Stats>('/api/dashboard/stats');
-    const { data: recentRuns, loading: runsLoading } = useFetch<Run[]>('/api/dashboard/recent');
+    const { data: stats, loading: statsLoading, error: statsError } = useFetch<Stats>('/api/dashboard/stats');
+    const { data: recentRuns, loading: runsLoading, error: runsError } = useFetch<Run[]>('/api/dashboard/recent');
 
     return (
         <div>
             <h2 className="text-2xl font-bold text-white mb-6">Dashboard</h2>
+
+            {(statsError || runsError) && (
+                <div className="mb-4 p-3 rounded-lg text-sm bg-red-900/20 text-red-400 border border-red-800">
+                    Failed to load dashboard data: {statsError || runsError}
+                </div>
+            )}
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

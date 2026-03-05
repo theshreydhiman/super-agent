@@ -6,6 +6,31 @@ import { Octokit } from '@octokit/rest';
 const router = Router();
 const configRepo = new ConfigRepository();
 
+const ALLOWED_KEYS = new Set([
+    'github_token',
+    'github_owner',
+    'github_repo',
+    'dev_branch',
+    'issue_label',
+    'webhook_secret',
+    'ai_provider',
+    'gemini_api_key',
+    'gemini_model',
+    'openai_api_key',
+    'openai_model',
+    'claude_api_key',
+    'claude_model',
+    'groq_api_key',
+    'groq_model',
+    'max_concurrent_agents',
+    'emailjs_service_id',
+    'emailjs_template_id',
+    'emailjs_public_key',
+    'emailjs_private_key',
+]);
+
+const VALID_PROVIDERS = new Set(['gemini', 'openai', 'claude', 'groq']);
+
 router.use(requireAuth);
 
 router.get('/', async (req: Request, res: Response) => {
@@ -19,35 +44,52 @@ router.get('/', async (req: Request, res: Response) => {
 
 router.put('/', async (req: Request, res: Response) => {
     try {
-        const configs = req.body as Record<string, string>;
+        const configs = req.body;
 
-        // Validate allowed config keys
-        const allowedKeys = [
-            'ai_provider',
-            'gemini_api_key',
-            'openai_api_key',
-            'claude_api_key',
-            'groq_api_key',
-            'github_owner',
-            'github_repo',
-            'dev_branch',
-            'issue_label',
-            'webhook_secret',
-            'max_concurrent_agents',
-            'emailjs_service_id',
-            'emailjs_template_id',
-            'emailjs_public_key',
-            'emailjs_private_key',
-        ];
+        if (!configs || typeof configs !== 'object' || Array.isArray(configs)) {
+            res.status(400).json({ error: 'Request body must be a JSON object' });
+            return;
+        }
 
-        const filtered: Record<string, string> = {};
-        for (const [key, value] of Object.entries(configs)) {
-            if (allowedKeys.includes(key) && value !== undefined) {
-                filtered[key] = value;
+        // Validate ai_provider value if present
+        if (configs.ai_provider !== undefined && !VALID_PROVIDERS.has(configs.ai_provider)) {
+            res.status(400).json({ error: `Invalid AI provider. Must be one of: ${[...VALID_PROVIDERS].join(', ')}` });
+            return;
+        }
+
+        // Validate max_concurrent_agents if present
+        if (configs.max_concurrent_agents !== undefined) {
+            const val = parseInt(configs.max_concurrent_agents, 10);
+            if (isNaN(val) || val < 1 || val > 10) {
+                res.status(400).json({ error: 'max_concurrent_agents must be between 1 and 10' });
+                return;
             }
         }
 
-        await configRepo.setMultiple(req.user!.id, filtered);
+        const toSet: Record<string, string> = {};
+        const toDelete: string[] = [];
+
+        for (const [key, value] of Object.entries(configs)) {
+            if (!ALLOWED_KEYS.has(key)) continue;
+
+            if (value === undefined || value === null || value === '') {
+                // Empty value = clear the config key
+                toDelete.push(key);
+            } else if (typeof value === 'string') {
+                toSet[key] = value;
+            }
+        }
+
+        // Set non-empty values
+        if (Object.keys(toSet).length > 0) {
+            await configRepo.setMultiple(req.user!.id, toSet);
+        }
+
+        // Delete cleared values
+        for (const key of toDelete) {
+            await configRepo.delete(req.user!.id, key);
+        }
+
         const updated = await configRepo.getAllMasked(req.user!.id);
         res.json(updated);
     } catch (error: any) {
