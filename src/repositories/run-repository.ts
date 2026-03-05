@@ -34,6 +34,13 @@ export interface ProcessedIssue {
     updated_at: Date;
 }
 
+/** Safely coerce a MySQL aggregate value (may be string, BigInt, or number) to a JS number. */
+function toNumber(val: any): number {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === 'bigint') return Number(val);
+    return parseInt(String(val), 10) || 0;
+}
+
 export class RunRepository {
     async createRun(data: {
         user_id: number;
@@ -59,6 +66,7 @@ export class RunRepository {
         const values: any[] = [];
 
         for (const [key, value] of Object.entries(data)) {
+            if (value === undefined) continue;
             fields.push(`${key} = ?`);
             values.push(value);
         }
@@ -67,10 +75,20 @@ export class RunRepository {
             fields.push('completed_at = NOW()');
         }
 
+        if (fields.length === 0) return;
+
         values.push(id);
         await pool.execute(
             `UPDATE agent_runs SET ${fields.join(', ')} WHERE id = ?`,
             values
+        );
+    }
+
+    async incrementIssuesProcessed(id: number): Promise<void> {
+        const pool = getPool();
+        await pool.execute(
+            `UPDATE agent_runs SET issues_processed = issues_processed + 1 WHERE id = ?`,
+            [id]
         );
     }
 
@@ -89,7 +107,7 @@ export class RunRepository {
     ): Promise<{ runs: AgentRun[]; total: number }> {
         const pool = getPool();
         const page = options.page || 1;
-        const limit = options.limit || 20;
+        const limit = Math.min(Math.max(options.limit || 20, 1), 100);
         const offset = (page - 1) * limit;
 
         let where = 'WHERE user_id = ?';
@@ -108,7 +126,7 @@ export class RunRepository {
             `SELECT COUNT(*) as total FROM agent_runs ${where}`,
             params
         );
-        const total = (countRows[0] as any).total;
+        const total = toNumber((countRows[0] as any).total);
 
         const [rows] = await pool.execute<RowDataPacket[]>(
             `SELECT * FROM agent_runs ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
@@ -145,23 +163,24 @@ export class RunRepository {
             [userId]
         );
 
-        const successCount = (successRows[0] as any).cnt;
-        const totalIssueCount = (totalIssueRows[0] as any).cnt;
+        const successCount = toNumber((successRows[0] as any).cnt);
+        const totalIssueCount = toNumber((totalIssueRows[0] as any).cnt);
         const successRate = totalIssueCount > 0 ? Math.round((successCount / totalIssueCount) * 100) : 0;
 
         return {
-            totalRuns: stats.totalRuns,
-            issuesProcessed: stats.issuesProcessed,
-            prsCreated: stats.prsCreated,
+            totalRuns: toNumber(stats.totalRuns),
+            issuesProcessed: toNumber(stats.issuesProcessed),
+            prsCreated: toNumber(stats.prsCreated),
             successRate,
         };
     }
 
     async getRecentRuns(userId: number, limit: number = 10): Promise<AgentRun[]> {
         const pool = getPool();
+        const safeLim = Math.min(Math.max(limit, 1), 50);
         const [rows] = await pool.execute<RowDataPacket[]>(
             'SELECT * FROM agent_runs WHERE user_id = ? ORDER BY started_at DESC LIMIT ?',
-            [userId, limit]
+            [userId, String(safeLim)]
         );
         return rows as AgentRun[];
     }
@@ -202,15 +221,27 @@ export class RunRepository {
         const values: any[] = [];
 
         for (const [key, value] of Object.entries(data)) {
+            if (value === undefined) continue;
             fields.push(`${key} = ?`);
             values.push(value);
         }
+
+        if (fields.length === 0) return;
 
         values.push(id);
         await pool.execute(
             `UPDATE processed_issues SET ${fields.join(', ')} WHERE id = ?`,
             values
         );
+    }
+
+    async findProcessedIssueById(id: number): Promise<ProcessedIssue | null> {
+        const pool = getPool();
+        const [rows] = await pool.execute<RowDataPacket[]>(
+            'SELECT * FROM processed_issues WHERE id = ?',
+            [id]
+        );
+        return rows.length > 0 ? (rows[0] as ProcessedIssue) : null;
     }
 
     async getIssuesByRunId(runId: number): Promise<ProcessedIssue[]> {
@@ -228,7 +259,7 @@ export class RunRepository {
     ): Promise<{ issues: ProcessedIssue[]; total: number }> {
         const pool = getPool();
         const page = options.page || 1;
-        const limit = options.limit || 20;
+        const limit = Math.min(Math.max(options.limit || 20, 1), 100);
         const offset = (page - 1) * limit;
 
         let where = 'WHERE user_id = ?';
@@ -247,7 +278,7 @@ export class RunRepository {
             `SELECT COUNT(*) as total FROM processed_issues ${where}`,
             params
         );
-        const total = (countRows[0] as any).total;
+        const total = toNumber((countRows[0] as any).total);
 
         const [rows] = await pool.execute<RowDataPacket[]>(
             `SELECT * FROM processed_issues ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
@@ -255,5 +286,23 @@ export class RunRepository {
         );
 
         return { issues: rows as ProcessedIssue[], total };
+    }
+
+    async getProcessedIssuesByRepoAndNumbers(
+        userId: number,
+        repoOwner: string,
+        repoName: string,
+        issueNumbers: number[]
+    ): Promise<ProcessedIssue[]> {
+        if (issueNumbers.length === 0) return [];
+        const pool = getPool();
+        const placeholders = issueNumbers.map(() => '?').join(',');
+        const [rows] = await pool.execute<RowDataPacket[]>(
+            `SELECT * FROM processed_issues
+             WHERE user_id = ? AND repo_owner = ? AND repo_name = ? AND issue_number IN (${placeholders})
+             ORDER BY created_at DESC`,
+            [userId, repoOwner, repoName, ...issueNumbers]
+        );
+        return rows as ProcessedIssue[];
     }
 }

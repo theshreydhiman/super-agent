@@ -1,5 +1,6 @@
 import { GitHubClient, GitHubIssue } from '../github/github-client';
 import { AIEngine, CodeChange } from '../ai/ai-engine';
+import { UserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
 
@@ -8,6 +9,7 @@ const log = createLogger('WorkerAgent');
 export interface WorkerResult {
     issueNumber: number;
     issueTitle: string;
+    issueBody: string | null;
     branchName: string;
     success: boolean;
     changes: CodeChange[];
@@ -17,10 +19,12 @@ export interface WorkerResult {
 export class WorkerAgent {
     private github: GitHubClient;
     private ai: AIEngine;
+    private cfg: UserRuntimeConfig | typeof config;
 
-    constructor(github: GitHubClient, ai: AIEngine) {
+    constructor(github: GitHubClient, ai: AIEngine, userConfig?: UserRuntimeConfig) {
         this.github = github;
         this.ai = ai;
+        this.cfg = userConfig || config;
     }
 
     /**
@@ -34,16 +38,16 @@ export class WorkerAgent {
     async processIssue(issue: GitHubIssue): Promise<WorkerResult> {
         const branchName = `fix/issue-${issue.number}`;
 
-        log.info(`🔧 Worker started for issue #${issue.number}: "${issue.title}"`);
+        log.info(`Worker started for issue #${issue.number}: "${issue.title}"`);
 
         try {
             // Step 1: Create a branch from dev
-            log.info(`Creating branch "${branchName}" from "${config.github.devBranch}"`);
-            await this.github.createBranch(branchName, config.github.devBranch);
+            log.info(`Creating branch "${branchName}" from "${this.cfg.github.devBranch}"`);
+            await this.github.createBranch(branchName, this.cfg.github.devBranch);
 
             // Step 2: Get the repository file tree for context
             log.info('Fetching repository file tree...');
-            const repoTree = await this.github.getRepoTree(config.github.devBranch);
+            const repoTree = await this.github.getRepoTree(this.cfg.github.devBranch);
 
             // Step 3: Analyze the issue with AI
             log.info('Analyzing issue with AI...');
@@ -69,7 +73,7 @@ export class WorkerAgent {
                 try {
                     fileContents[filePath] = await this.github.getFileContent(
                         filePath,
-                        config.github.devBranch
+                        this.cfg.github.devBranch
                     );
                 } catch {
                     log.warn(`Could not read file "${filePath}", it may be new`);
@@ -111,17 +115,18 @@ export class WorkerAgent {
 
             await this.github.addIssueComment(
                 issue.number,
-                `🤖 **AI Agent has committed a fix to branch \`${branchName}\`**\n\n` +
+                `**AI Agent has committed a fix to branch \`${branchName}\`**\n\n` +
                 `**Approach:** ${analysis.approach}\n\n` +
                 `**Changes:**\n${changesSummary}\n\n` +
                 `A reviewer agent will now verify these changes and create a PR.`
             );
 
-            log.info(`✅ Worker completed for issue #${issue.number}`);
+            log.info(`Worker completed for issue #${issue.number}`);
 
             return {
                 issueNumber: issue.number,
                 issueTitle: issue.title,
+                issueBody: issue.body,
                 branchName,
                 success: true,
                 changes,
@@ -135,7 +140,7 @@ export class WorkerAgent {
             try {
                 await this.github.addIssueComment(
                     issue.number,
-                    `🤖 **AI Agent encountered an error while processing this issue:**\n\n` +
+                    `**AI Agent encountered an error while processing this issue:**\n\n` +
                     `\`\`\`\n${error.message}\n\`\`\`\n\n` +
                     `The issue has been returned to the queue for manual review.`
                 );
@@ -146,6 +151,7 @@ export class WorkerAgent {
             return {
                 issueNumber: issue.number,
                 issueTitle: issue.title,
+                issueBody: issue.body,
                 branchName,
                 success: false,
                 changes: [],

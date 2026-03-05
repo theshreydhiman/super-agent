@@ -4,6 +4,7 @@ import { EmailService } from '../services/email-service';
 import { WorkerAgent, WorkerResult } from './worker-agent';
 import { ReviewerAgent, ReviewedPR } from './reviewer-agent';
 import { AgentCallbacks } from '../services/run-tracker';
+import { UserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
 
@@ -15,11 +16,13 @@ export class SuperAgent {
     private emailService: EmailService;
     private processingRepos = new Set<string>();
     private callbacks?: AgentCallbacks;
+    private cfg: UserRuntimeConfig | typeof config;
 
-    constructor(callbacks?: AgentCallbacks) {
-        this.discoveryClient = new GitHubClient();
-        this.ai = new AIEngine();
-        this.emailService = new EmailService();
+    constructor(callbacks?: AgentCallbacks, userConfig?: UserRuntimeConfig) {
+        this.cfg = userConfig || config;
+        this.discoveryClient = new GitHubClient(undefined, undefined, userConfig);
+        this.ai = new AIEngine(userConfig);
+        this.emailService = new EmailService(userConfig);
         this.callbacks = callbacks;
     }
 
@@ -43,26 +46,44 @@ export class SuperAgent {
     }
 
     private async getTargetRepos(): Promise<string[]> {
-        if (config.github.repo) {
-            return [config.github.repo];
+        if (this.cfg.github.repo) {
+            return [this.cfg.github.repo];
         }
         return this.discoveryClient.listOwnerRepos();
     }
 
-    async processRepo(repoName: string): Promise<void> {
+    async processRepo(repoName: string, options?: { skipLabelFilter?: boolean; issueNumber?: number; issueNumbers?: number[] }): Promise<void> {
         if (this.processingRepos.has(repoName)) {
             log.warn(`Already processing ${repoName}, skipping`);
             return;
         }
 
         this.processingRepos.add(repoName);
-        const github = new GitHubClient(config.github.owner, repoName);
+        const github = new GitHubClient(this.cfg.github.owner, repoName, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
         let runId: number | undefined;
 
         try {
-            log.info(`--- Processing repo: ${config.github.owner}/${repoName} ---`);
+            log.info(`--- Processing repo: ${this.cfg.github.owner}/${repoName} ---`);
 
-            const issues = await github.fetchOpenIssues();
+            let issues = await github.fetchOpenIssues({ skipLabelFilter: options?.skipLabelFilter });
+
+            // If specific issue(s) were requested, filter to only those
+            if (options?.issueNumbers && options.issueNumbers.length > 0) {
+                const targetSet = new Set(options.issueNumbers);
+                issues = issues.filter(i => targetSet.has(i.number));
+                if (issues.length === 0) {
+                    log.warn(`None of the target issues [${options.issueNumbers.join(', ')}] found or actionable in ${repoName}`);
+                    return;
+                }
+                log.info(`Targeting ${issues.length} issue(s): ${issues.map(i => `#${i.number}`).join(', ')}`);
+            } else if (options?.issueNumber) {
+                issues = issues.filter(i => i.number === options.issueNumber);
+                if (issues.length === 0) {
+                    log.warn(`Issue #${options.issueNumber} not found or not actionable in ${repoName}`);
+                    return;
+                }
+                log.info(`Targeting single issue #${options.issueNumber}`);
+            }
 
             if (issues.length === 0) {
                 log.info(`No actionable issues in ${repoName}. Skipping.`);
@@ -73,17 +94,21 @@ export class SuperAgent {
 
             // Track run start
             if (this.callbacks?.onRunStart) {
-                runId = await this.callbacks.onRunStart(config.github.owner, repoName, issues.length);
+                runId = await this.callbacks.onRunStart(this.cfg.github.owner, repoName, issues.length);
             }
 
             // Label all issues as "in-progress"
             for (const issue of issues) {
-                await github.addLabel(issue.number, 'in-progress');
-                log.info(`Labeled issue #${issue.number} as "in-progress"`);
+                try {
+                    await github.addLabel(issue.number, 'in-progress');
+                    log.info(`Labeled issue #${issue.number} as "in-progress"`);
+                } catch (labelErr: any) {
+                    log.warn(`Failed to label issue #${issue.number}`, { error: labelErr.message });
+                }
             }
 
             // Spawn Worker Agents (concurrently with limit)
-            const workerResults = await this.spawnWorkers(issues, github, repoName, runId);
+            const { results: workerResults, issueDbIdMap } = await this.spawnWorkers(issues, github, repoName, runId);
 
             const successCount = workerResults.filter((r) => r.success).length;
             const failCount = workerResults.filter((r) => !r.success).length;
@@ -93,17 +118,36 @@ export class SuperAgent {
             // Spawn Reviewer Agent
             if (successCount > 0) {
                 log.info(`Starting Reviewer Agent for ${repoName}...`);
-                const reviewer = new ReviewerAgent(github, this.ai, this.emailService);
+                const reviewer = new ReviewerAgent(github, this.ai, this.emailService, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
                 const reviewedPRs = await reviewer.reviewAndCreatePRs(workerResults);
+
+                // Persist PR data via onPRCreated callback
+                if (this.callbacks?.onPRCreated) {
+                    for (const pr of reviewedPRs) {
+                        const issueDbId = issueDbIdMap.get(pr.issueNumber);
+                        if (issueDbId) {
+                            try {
+                                await this.callbacks.onPRCreated(issueDbId, pr);
+                            } catch (cbErr: any) {
+                                log.error(`Failed to persist PR data for issue #${pr.issueNumber}`, { error: cbErr.message });
+                            }
+                        }
+                    }
+                }
 
                 log.info(`Run complete for ${repoName}! ${reviewedPRs.length} PR(s) created.`);
                 this.logSummary(repoName, workerResults, reviewedPRs);
             } else {
                 log.warn(`No successful fixes in ${repoName} — no PRs will be created`);
+            }
 
-                for (const result of workerResults) {
-                    if (!result.success) {
+            // Clean up "in-progress" label from all failed issues regardless of whether other issues succeeded
+            for (const result of workerResults) {
+                if (!result.success) {
+                    try {
                         await github.removeLabel(result.issueNumber, 'in-progress');
+                    } catch {
+                        // Best effort label removal
                     }
                 }
             }
@@ -115,7 +159,11 @@ export class SuperAgent {
         } catch (error: any) {
             log.error(`Failed processing repo ${repoName}`, { error: error.message });
             if (this.callbacks?.onRunComplete && runId) {
-                await this.callbacks.onRunComplete(runId, 'failed', error.message);
+                try {
+                    await this.callbacks.onRunComplete(runId, 'failed', error.message);
+                } catch (cbErr: any) {
+                    log.error(`Failed to update run status to failed`, { error: cbErr.message });
+                }
             }
         } finally {
             this.processingRepos.delete(repoName);
@@ -127,9 +175,10 @@ export class SuperAgent {
         github: GitHubClient,
         repoName: string,
         runId?: number
-    ): Promise<WorkerResult[]> {
-        const maxConcurrent = config.agent.maxConcurrentAgents;
+    ): Promise<{ results: WorkerResult[]; issueDbIdMap: Map<number, number> }> {
+        const maxConcurrent = this.cfg.agent.maxConcurrentAgents;
         const results: WorkerResult[] = [];
+        const issueDbIdMap = new Map<number, number>();
 
         for (let i = 0; i < issues.length; i += maxConcurrent) {
             const batch = issues.slice(i, i + maxConcurrent);
@@ -143,18 +192,30 @@ export class SuperAgent {
                 // Track issue start
                 let issueDbId: number | undefined;
                 if (this.callbacks?.onIssueStart && runId) {
-                    issueDbId = await this.callbacks.onIssueStart(
-                        runId, issue.number, issue.title,
-                        config.github.owner, repoName
-                    );
+                    try {
+                        issueDbId = await this.callbacks.onIssueStart(
+                            runId, issue.number, issue.title,
+                            this.cfg.github.owner, repoName
+                        );
+                    } catch (cbErr: any) {
+                        log.error(`Failed to track issue start for #${issue.number}`, { error: cbErr.message });
+                    }
                 }
 
-                const worker = new WorkerAgent(github, this.ai);
+                if (issueDbId) {
+                    issueDbIdMap.set(issue.number, issueDbId);
+                }
+
+                const worker = new WorkerAgent(github, this.ai, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
                 const result = await worker.processIssue(issue);
 
                 // Track issue completion
                 if (this.callbacks?.onIssueProcessed && issueDbId) {
-                    await this.callbacks.onIssueProcessed(issueDbId, result);
+                    try {
+                        await this.callbacks.onIssueProcessed(issueDbId, result);
+                    } catch (cbErr: any) {
+                        log.error(`Failed to track issue completion for #${issue.number}`, { error: cbErr.message });
+                    }
                 }
 
                 return result;
@@ -166,37 +227,27 @@ export class SuperAgent {
                 if (result.status === 'fulfilled') {
                     results.push(result.value);
                 } else {
-                    log.error('Worker promise rejected', { error: result.reason });
+                    log.error('Worker promise rejected unexpectedly', { error: result.reason?.message || result.reason });
                 }
             }
         }
 
-        return results;
+        return { results, issueDbIdMap };
     }
 
     private logSummary(repoName: string, workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
-        console.log('\n' + '='.repeat(60));
-        console.log(`  SUPER AGENT RUN SUMMARY — ${config.github.owner}/${repoName}`);
-        console.log('='.repeat(60));
+        log.info('='.repeat(60));
+        log.info(`  SUPER AGENT RUN SUMMARY — ${this.cfg.github.owner}/${repoName}`);
+        log.info('='.repeat(60));
 
-        console.log('\nIssues Processed:');
         for (const result of workerResults) {
             const status = result.success ? 'OK' : 'FAIL';
-            console.log(`  [${status}] #${result.issueNumber}: ${result.issueTitle}`);
-            if (result.error) {
-                console.log(`     Error: ${result.error}`);
-            }
+            log.info(`  [${status}] #${result.issueNumber}: ${result.issueTitle}${result.error ? ` — ${result.error}` : ''}`);
         }
 
-        if (reviewedPRs.length > 0) {
-            console.log('\nPull Requests Created:');
-            for (const pr of reviewedPRs) {
-                const reviewStatus = pr.reviewApproved ? 'Approved' : 'Needs Review';
-                console.log(`  [${reviewStatus}] PR #${pr.prNumber}: ${pr.prUrl}`);
-                console.log(`     For issue #${pr.issueNumber}: ${pr.issueTitle}`);
-            }
+        for (const pr of reviewedPRs) {
+            const reviewStatus = pr.reviewApproved ? 'Approved' : 'Needs Review';
+            log.info(`  [${reviewStatus}] PR #${pr.prNumber}: ${pr.prUrl} (issue #${pr.issueNumber})`);
         }
-
-        console.log('\n' + '='.repeat(60) + '\n');
     }
 }
