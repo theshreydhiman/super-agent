@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Agent — Dashboard Wireframe</title>
+  <style>
+    /* ============================================
+       THEME: "Midnight Glass"
+
+       Design Principles:
+       - Dark base with subtle transparency/glass effects
+       - Soft rounded corners (16px cards, 12px buttons)
+       - Muted accent palette — no harsh neons
+       - Generous whitespace & breathing room
+       - Subtle borders using white/alpha for depth
+       - Clean sans-serif typography (Inter)
+       - Micro-interactions via subtle hover states
+
+       Color Palette:
+       - Base:      #0a0a0f (deep navy-black)
+       - Surface:   #12121a (card background)
+       - Elevated:  #1a1a26 (hover/raised)
+       - Border:    rgba(255,255,255,0.06)
+       - Text:      #e4e4e7 (primary)
+       - Muted:     #71717a (secondary text)
+       - Accent:    #6366f1 (indigo-500)
+       - Success:   #22c55e
+       - Warning:   #f59e0b
+       - Error:     #ef4444
+       - Info:      #3b82f6
+       ============================================ */
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a0f;
+      color: #e4e4e7;
+      min-height: 100vh;
+      display: flex;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 260px;
+      min-height: 100vh;
+      background: #0e0e16;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 10;
+    }
+
+    .sidebar-header {
+      padding: 28px 24px 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: white;
+      font-weight: 700;
+    }
+
+    .brand-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: #f4f4f5;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-badge {
+      font-size: 10px;
+      background: rgba(99,102,241,0.15);
+      color: #818cf8;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      padding: 16px 12px;
+      flex: 1;
+    }
+
+    .nav-section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #52525b;
+      padding: 8px 12px 8px;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      color: #a1a1aa;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      cursor: pointer;
+      margin-bottom: 2px;
+    }
+
+    .nav-item:hover {
+      background: rgba(255,255,255,0.04);
+      color: #e4e4e7;
+    }
+
+    .nav-item.active {
+      background: rgba(99,102,241,0.1);
+      color: #a5b4fc;
+    }
+
+    .nav-item.active .nav-icon {
+      color: #818cf8;
+    }
+
+    .nav-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      opacity: 0.7;
+    }
+
+    .nav-item.active .nav-icon {
+      opacity: 1;
+    }
+
+    .nav-count {
+      margin-left: auto;
+      background: rgba(255,255,255,0.06);
+      color: #71717a;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .nav-item.active .nav-count {
+      background: rgba(99,102,241,0.15);
+      color: #818cf8;
+    }
+
+    /* ── User Profile (Sidebar Bottom) ── */
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .user-card:hover {
+      background: rgba(255,255,255,0.04);
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #ec4899);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .user-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e4e4e7;
+    }
+
+    .user-role {
+      font-size: 11px;
+      color: #52525b;
+    }
+
+    .logout-icon {
+      color: #52525b;
+      font-size: 16px;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .logout-icon:hover {
+      color: #ef4444;
+    }
+
+    /* ── Main Content ── */
+    .main {
+      margin-left: 260px;
+      flex: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top Bar ── */
+    .topbar {
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(10,10,15,0.8);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .page-title-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #f4f4f5;
+      letter-spacing: -0.5px;
+    }
+
+    .page-subtitle {
+      font-size: 13px;
+      color: #71717a;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 9px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5457e5;
+      box-shadow: 0 0 20px rgba(99,102,241,0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.06);
+      color: #a1a1aa;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.1);
+      color: #e4e4e7;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #71717a;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-size: 16px;
+      position: relative;
+    }
+
+    .icon-btn:hover {
+      background: rgba(255,255,255,0.08);
+      color: #e4e4e7;
+    }
+
+    .notification-dot {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 7px;
+      height: 7px;
+      background: #ef4444;
+      border-radius: 50%;
+      border: 2px solid #0a0a0f;
+    }
+
+    /* ── Content Area ── */
+    .content {
+      padding: 28px 32px 40px;
+      flex: 1;
+    }
+
+    /* ── Stats Grid ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: #12121a;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 22px 24px;
+      transition: all 0.2s ease;
+      cursor: default;
+    }
+
+    .stat-card:hover {
+      border-color: rgba(255,255,255,0.1);
+      background: #15151f;
+    }
+
+    .stat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .stat-icon-wrapper {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .stat-icon-wrapper.blue {
+      background: rgba(59,130,246,0.1);
+      color: #60a5fa;
+    }
+    .stat-icon-wrapper.green {
+      background: rgba(34,197,94,0.1);
+      color: #4ade80;
+    }
+    .stat-icon-wrapper.purple {
+      background: rgba(139,92,246,0.1);
+      color: #a78bfa;
+    }
+    .stat-icon-wrapper.amber {
+      background: rgba(245,158,11,0.1);
+      color: #fbbf24;
+    }
+
+    .stat-trend {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+
+    .stat-trend.up {
+      color: #4ade80;
+      background: rgba(34,197,94,0.1);
+    }
+
+    .stat-trend.down {
+      color: #f87171;
+      background: rgba(239,68,68,0.1);
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #f4f4f5;
+      letter-spacing: -1px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: #71717a;
+      font-weight: 500;
+    }
+
+    /* ── Section Layout ── */
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 20px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: #12121a;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f4f4f5;
+    }
+
+    .card-link {
+      font-size: 13px;
+      color: #818cf8;
+      text-decoration: none;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .card-link:hover {
+      color: #a5b4fc;
+    }
+
+    /* ── Table ── */
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px 24px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #52525b;
+      font-weight: 600;
+      background: rgba(255,255,255,0.02);
+    }
+
+    td {
+      padding: 14px 24px;
+      font-size: 13px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      color: #d4d4d8;
+    }
+
+    tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .issue-link {
+      color: #e4e4e7;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+
+    .issue-link:hover {
+      color: #818cf8;
+    }
+
+    .issue-number {
+      color: #52525b;
+      font-size: 12px;
+      margin-right: 8px;
+      font-weight: 500;
+    }
+
+    .repo-name {
+      color: #71717a;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* ── Status Badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .badge-success {
+      background: rgba(34,197,94,0.1);
+      color: #4ade80;
+    }
+    .badge-success .badge-dot { background: #4ade80; }
+
+    .badge-pending {
+      background: rgba(113,113,122,0.15);
+      color: #a1a1aa;
+    }
+    .badge-pending .badge-dot { background: #a1a1aa; }
+
+    .badge-working {
+      background: rgba(245,158,11,0.1);
+      color: #fbbf24;
+    }
+    .badge-working .badge-dot { background: #fbbf24; }
+
+    .badge-failed {
+      background: rgba(239,68,68,0.1);
+      color: #f87171;
+    }
+    .badge-failed .badge-dot { background: #f87171; }
+
+    .badge-pr {
+      background: rgba(139,92,246,0.1);
+      color: #a78bfa;
+    }
+    .badge-pr .badge-dot { background: #a78bfa; }
+
+    /* ── Activity Feed ── */
+    .activity-feed {
+      padding: 8px 0;
+    }
+
+    .activity-item {
+      display: flex;
+      gap: 14px;
+      padding: 14px 24px;
+      transition: background 0.15s;
+    }
+
+    .activity-item:hover {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .activity-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+
+    .activity-indicator.green { background: #4ade80; }
+    .activity-indicator.blue { background: #60a5fa; }
+    .activity-indicator.purple { background: #a78bfa; }
+    .activity-indicator.amber { background: #fbbf24; }
+    .activity-indicator.red { background: #f87171; }
+
+    .activity-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .activity-text {
+      font-size: 13px;
+      color: #d4d4d8;
+      line-height: 1.5;
+    }
+
+    .activity-text strong {
+      color: #f4f4f5;
+      font-weight: 600;
+    }
+
+    .activity-time {
+      font-size: 11px;
+      color: #52525b;
+      margin-top: 4px;
+    }
+
+    /* ── Quick Stats / Mini Chart Placeholder ── */
+    .mini-chart {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .mini-stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .mini-stat-label {
+      font-size: 13px;
+      color: #71717a;
+      font-weight: 500;
+    }
+
+    .mini-stat-value {
+      font-size: 14px;
+      color: #e4e4e7;
+      font-weight: 600;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 20px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 20px;
+      transition: width 0.3s ease;
+    }
+
+    .progress-fill.indigo { background: linear-gradient(90deg, #6366f1, #818cf8); }
+    .progress-fill.green { background: linear-gradient(90deg, #22c55e, #4ade80); }
+    .progress-fill.amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+    /* ── Separator ── */
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 4px 24px;
+    }
+
+    /* ── Theme Spec Section ── */
+    .theme-spec {
+      margin-top: 48px;
+      padding: 32px;
+      background: #12121a;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+    }
+
+    .theme-spec h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: #f4f4f5;
+    }
+
+    .color-palette {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .color-swatch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .swatch-label {
+      font-size: 11px;
+      color: #71717a;
+      font-weight: 500;
+    }
+
+    .swatch-hex {
+      font-size: 10px;
+      color: #52525b;
+      font-family: monospace;
+    }
+
+    .spec-section {
+      margin-bottom: 24px;
+    }
+
+    .spec-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #a1a1aa;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .spec-detail {
+      font-size: 13px;
+      color: #71717a;
+      line-height: 1.8;
+    }
+
+    .spec-detail code {
+      background: rgba(255,255,255,0.06);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #a78bfa;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- SIDEBAR                                   -->
+  <!-- ════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand">
+        <div class="brand-icon">S</div>
+        <span class="brand-text">Super Agent</span>
+        <span class="brand-badge">v1.0</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section-label">Main</div>
+      <a class="nav-item active">
+        <span class="nav-icon">&#9632;</span>  <!-- Dashboard icon placeholder -->
+        Dashboard
+      </a>
+      <a class="nav-item">
+        <span class="nav-icon">&#9998;</span>  <!-- Issues icon placeholder -->
+        Issues
+        <span class="nav-count">12</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top: 16px;">System</div>
+      <a class="nav-item">
+        <span class="nav-icon">&#9881;</span>  <!-- Settings icon placeholder -->
+        Settings
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="avatar">SD</div>
+        <div class="user-info">
+          <div class="user-name">theshreydhiman</div>
+          <div class="user-role">Admin</div>
+        </div>
+        <span class="logout-icon">&#x2192;</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MAIN CONTENT                              -->
+  <!-- ════════════════════════════════════════ -->
+  <main class="main">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="page-title-section">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Overview of your AI agent activity</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="icon-btn">
+          &#128276;
+          <span class="notification-dot"></span>
+        </div>
+        <button class="btn btn-primary">+ New Issue</button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- ── Stats Cards ── -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-icon-wrapper blue">&#128203;</div>
+            <span class="stat-trend up">&#8593; 12%</span>
+          </div>
+          <div class="stat-value">48</div>
+          <div class="stat-label">Total Issues</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-icon-wrapper green">&#10003;</div>
+            <span class="stat-trend up">&#8593; 8%</span>
+          </div>
+          <div class="stat-value">35</div>
+          <div class="stat-label">Issues Fixed</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-icon-wrapper purple">&#128279;</div>
+            <span class="stat-trend up">&#8593; 5%</span>
+          </div>
+          <div class="stat-value">29</div>
+          <div class="stat-label">PRs Created</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-icon-wrapper amber">&#9733;</div>
+            <span class="stat-trend down">&#8595; 2%</span>
+          </div>
+          <div class="stat-value">72%</div>
+          <div class="stat-label">Success Rate</div>
+        </div>
+      </div>
+
+      <!-- ── Two Column Layout ── -->
+      <div class="section-grid">
+
+        <!-- Recent Issues Table -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Issues</span>
+            <a class="card-link">View all &rarr;</a>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Issue</th>
+                  <th>Repository</th>
+                  <th>Status</th>
+                  <th>PR</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a class="issue-link">
+                      <span class="issue-number">#42</span>
+                      Fix authentication timeout error
+                    </a>
+                  </td>
+                  <td><span class="repo-name">user/api-service</span></td>
+                  <td><span class="badge badge-success"><span class="badge-dot"></span>Success</span></td>
+                  <td><a class="card-link">#87</a></td>
+                  <td style="color: #52525b; font-size: 12px;">Mar 9, 2026</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a class="issue-link">
+                      <span class="issue-number">#41</span>
+                      Add rate limiting to endpoints
+                    </a>
+                  </td>
+                  <td><span class="repo-name">user/api-service</span></td>
+                  <td><span class="badge badge-pr"><span class="badge-dot"></span>PR Created</span></td>
+                  <td><a class="card-link">#86</a></td>
+                  <td style="color: #52525b; font-size: 12px;">Mar 8, 2026</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a class="issue-link">
+                      <span class="issue-number">#40</span>
+                      Resolve memory leak in worker
+                    </a>
+                  </td>
+                  <td><span class="repo-name">user/worker-svc</span></td>
+                  <td><span class="badge badge-working"><span class="badge-dot"></span>Working</span></td>
+                  <td style="color: #52525b;">—</td>
+                  <td style="color: #52525b; font-size: 12px;">Mar 8, 2026</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a class="issue-link">
+                      <span class="issue-number">#39</span>
+                      Update deprecated crypto module
+                    </a>
+                  </td>
+                  <td><span class="repo-name">user/auth-lib</span></td>
+                  <td><span class="badge badge-failed"><span class="badge-dot"></span>Failed</span></td>
+                  <td style="color: #52525b;">—</td>
+                  <td style="color: #52525b; font-size: 12px;">Mar 7, 2026</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a class="issue-link">
+                      <span class="issue-number">#38</span>
+                      Improve error messages for CLI
+                    </a>
+                  </td>
+                  <td><span class="repo-name">user/super-agent</span></td>
+                  <td><span class="badge badge-pending"><span class="badge-dot"></span>Pending</span></td>
+                  <td style="color: #52525b;">—</td>
+                  <td style="color: #52525b; font-size: 12px;">Mar 7, 2026</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right Sidebar: Activity + Stats -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+
+          <!-- Activity Feed -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Activity</span>
+              <span style="font-size: 11px; color: #52525b;">Live</span>
+            </div>
+            <div class="activity-feed">
+              <div class="activity-item">
+                <div class="activity-indicator green"></div>
+                <div class="activity-content">
+                  <div class="activity-text"><strong>Issue #42</strong> resolved successfully</div>
+                  <div class="activity-time">2 minutes ago</div>
+                </div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-indicator purple"></div>
+                <div class="activity-content">
+                  <div class="activity-text">PR <strong>#86</strong> created for Issue #41</div>
+                  <div class="activity-time">15 minutes ago</div>
+                </div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-indicator amber"></div>
+                <div class="activity-content">
+                  <div class="activity-text">Agent started working on <strong>Issue #40</strong></div>
+                  <div class="activity-time">32 minutes ago</div>
+                </div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-indicator red"></div>
+                <div class="activity-content">
+                  <div class="activity-text"><strong>Issue #39</strong> fix attempt failed</div>
+                  <div class="activity-time">1 hour ago</div>
+                </div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-indicator blue"></div>
+                <div class="activity-content">
+                  <div class="activity-text">New issue <strong>#38</strong> detected via webhook</div>
+                  <div class="activity-time">2 hours ago</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Performance Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Performance</span>
+            </div>
+            <div class="mini-chart">
+              <div>
+                <div class="mini-stat-row">
+                  <span class="mini-stat-label">Resolution Rate</span>
+                  <span class="mini-stat-value">72%</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill indigo" style="width: 72%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="mini-stat-row">
+                  <span class="mini-stat-label">PR Merge Rate</span>
+                  <span class="mini-stat-value">83%</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill green" style="width: 83%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="mini-stat-row">
+                  <span class="mini-stat-label">Avg. Fix Time</span>
+                  <span class="mini-stat-value">4.2 min</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill amber" style="width: 58%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════ -->
+      <!-- THEME SPECIFICATION                       -->
+      <!-- ════════════════════════════════════════ -->
+      <div class="theme-spec">
+        <h2>Theme: "Midnight Glass"</h2>
+
+        <div class="spec-section">
+          <h3>Color Palette</h3>
+          <div class="color-palette">
+            <div class="color-swatch">
+              <div class="swatch" style="background: #0a0a0f;"></div>
+              <span class="swatch-label">Base</span>
+              <span class="swatch-hex">#0a0a0f</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #12121a;"></div>
+              <span class="swatch-label">Surface</span>
+              <span class="swatch-hex">#12121a</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #1a1a26;"></div>
+              <span class="swatch-label">Elevated</span>
+              <span class="swatch-hex">#1a1a26</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #6366f1;"></div>
+              <span class="swatch-label">Accent</span>
+              <span class="swatch-hex">#6366f1</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #22c55e;"></div>
+              <span class="swatch-label">Success</span>
+              <span class="swatch-hex">#22c55e</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #f59e0b;"></div>
+              <span class="swatch-label">Warning</span>
+              <span class="swatch-hex">#f59e0b</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #ef4444;"></div>
+              <span class="swatch-label">Error</span>
+              <span class="swatch-hex">#ef4444</span>
+            </div>
+            <div class="color-swatch">
+              <div class="swatch" style="background: #8b5cf6;"></div>
+              <span class="swatch-label">Purple</span>
+              <span class="swatch-hex">#8b5cf6</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-section">
+          <h3>Typography</h3>
+          <p class="spec-detail">
+            Font: <code>Inter</code> (fallback: system sans-serif)<br>
+            Weights: 400 (body), 500 (labels), 600 (headings), 700 (titles)<br>
+            Page title: <code>22px / 700</code> &nbsp;|&nbsp;
+            Card title: <code>15px / 600</code> &nbsp;|&nbsp;
+            Body: <code>13px / 400</code> &nbsp;|&nbsp;
+            Labels: <code>11px / 600 uppercase</code>
+          </p>
+        </div>
+
+        <div class="spec-section">
+          <h3>Spacing & Radius</h3>
+          <p class="spec-detail">
+            Card radius: <code>16px</code> &nbsp;|&nbsp;
+            Button radius: <code>10px</code> &nbsp;|&nbsp;
+            Badge radius: <code>20px (pill)</code><br>
+            Content padding: <code>28px 32px</code> &nbsp;|&nbsp;
+            Card padding: <code>22px 24px</code><br>
+            Grid gap: <code>16px (stats)</code>, <code>20px (sections)</code>
+          </p>
+        </div>
+
+        <div class="spec-section">
+          <h3>Design Tokens</h3>
+          <p class="spec-detail">
+            Borders: <code>1px solid rgba(255,255,255,0.06)</code><br>
+            Hover bg: <code>rgba(255,255,255,0.04)</code><br>
+            Active nav bg: <code>rgba(99,102,241,0.1)</code><br>
+            Glass topbar: <code>backdrop-filter: blur(12px)</code><br>
+            Transitions: <code>all 0.15s ease</code>
+          </p>
+        </div>
+
+        <div class="spec-section">
+          <h3>Key Design Decisions</h3>
+          <p class="spec-detail">
+            1. <strong>Subtle depth</strong> — white/alpha borders instead of shadows for a clean, layered feel<br>
+            2. <strong>Muted accents</strong> — indigo primary avoids the overused blue; softer status colors<br>
+            3. <strong>Consistent iconography</strong> — rounded icon wrappers with tinted backgrounds<br>
+            4. <strong>Data density</strong> — compact tables & activity feeds maximize information without clutter<br>
+            5. <strong>Two-column dashboard</strong> — table + activity/performance sidebar for better scanning<br>
+            6. <strong>Sticky glassmorphic topbar</strong> — subtle blur keeps context while scrolling<br>
+            7. <strong>No emojis in UI</strong> — replaced with styled icon wrappers (will use Lucide React icons)
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+</body>
+</html>
