@@ -14,6 +14,7 @@ interface GitHubIssue {
     branch_name: string | null;
     pr_number: number | null;
     pr_url: string | null;
+    error_message: string | null;
     created_at: string;
 }
 
@@ -32,7 +33,7 @@ export default function IssuesPage() {
         const key = `${issue.repo_name}-${issue.issue_number}`;
         setFixingIssues((prev) => new Set(prev).add(key));
         try {
-            await apiFetch('/api/runs/trigger', {
+            await apiFetch('/api/issues/trigger', {
                 method: 'POST',
                 body: JSON.stringify({ repo: issue.repo_name, rerun, issueNumber: issue.issue_number }),
             });
@@ -110,7 +111,9 @@ export default function IssuesPage() {
                                         <td className="px-4 py-3 text-sm text-gray-400">
                                             {issue.repo_owner}/{issue.repo_name}
                                         </td>
-                                        <td className="px-4 py-3"><StatusBadge status={issue.status} /></td>
+                                        <td className="px-4 py-3" title={issue.status === 'failed' && issue.error_message ? issue.error_message : undefined}>
+                                            <StatusBadge status={issue.status} />
+                                        </td>
                                         <td className="px-4 py-3 text-sm">
                                             {issue.pr_url ? (
                                                 <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">

@@ -1,12 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { Octokit } from '@octokit/rest';
 import { requireAuth } from '../middleware/auth-middleware';
-import { RunRepository } from '../repositories/run-repository';
+import { IssueRepository } from '../repositories/issue-repository';
+import { SuperAgent } from '../agents/super-agent';
+import { IssueTracker } from '../services/run-tracker';
+import { getUserRuntimeConfig } from '../services/user-config';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('IssueRoutes');
 const router = Router();
-const runRepo = new RunRepository();
+const issueRepo = new IssueRepository();
 
 router.use(requireAuth);
 
@@ -49,6 +52,7 @@ router.get('/', async (req: Request, res: Response) => {
             branch_name: string | null;
             pr_number: number | null;
             pr_url: string | null;
+            error_message: string | null;
             created_at: string;
         }[] = [];
 
@@ -67,11 +71,8 @@ router.get('/', async (req: Request, res: Response) => {
 
                 // Bulk lookup processing status from DB
                 const issueNumbers = issues.map((i) => i.number);
-                const processed = await runRepo.getProcessedIssuesByRepoAndNumbers(
-                    req.user!.id,
-                    owner,
-                    repoName,
-                    issueNumbers
+                const processed = await issueRepo.getByRepoAndNumbers(
+                    req.user!.id, owner, repoName, issueNumbers
                 );
 
                 const processedMap = new Map<number, typeof processed[0]>();
@@ -92,7 +93,6 @@ router.get('/', async (req: Request, res: Response) => {
                         per_page: 100,
                     });
                     for (const pr of prs) {
-                        // Match PRs by branch name pattern: fix/issue-N
                         const match = pr.head.ref.match(/^fix\/issue-(\d+)$/);
                         if (match) {
                             prMap.set(parseInt(match[1]), {
@@ -111,7 +111,6 @@ router.get('/', async (req: Request, res: Response) => {
                         typeof l === 'string' ? l : l.name || ''
                     );
 
-                    // Derive status: DB record takes priority, then GitHub labels
                     let status = 'pending';
                     if (p) {
                         status = p.status;
@@ -121,12 +120,10 @@ router.get('/', async (req: Request, res: Response) => {
                         status = 'working';
                     }
 
-                    // Get PR info from DB or from GitHub PRs
                     const ghPr = prMap.get(issue.number);
                     const pr_number = p?.pr_number || ghPr?.pr_number || null;
                     const pr_url = p?.pr_url || ghPr?.pr_url || null;
 
-                    // If we found a PR but status was pending, upgrade to pr_created
                     if (pr_url && status === 'pending') {
                         status = 'pr_created';
                     }
@@ -142,25 +139,85 @@ router.get('/', async (req: Request, res: Response) => {
                         branch_name: p?.branch_name || null,
                         pr_number,
                         pr_url,
+                        error_message: p?.error_message || null,
                         created_at: issue.created_at,
                     });
                 }
             })
         );
 
-        // Log any failed repo fetches
         for (const result of results) {
             if (result.status === 'rejected') {
                 log.warn('Failed to fetch issues for a repository', { error: result.reason?.message });
             }
         }
 
-        // Sort by created_at descending
         allIssues.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         res.json({ issues: allIssues, total: allIssues.length });
     } catch (error: any) {
         log.error('Failed to fetch issues', { error: error.message });
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Trigger fix for an issue
+router.post('/trigger', async (req: Request, res: Response) => {
+    try {
+        const { repo, issueNumber, rerun } = req.body;
+        if (!repo || typeof repo !== 'string') {
+            res.status(400).json({ error: 'Repository name is required' });
+            return;
+        }
+        if (!issueNumber) {
+            res.status(400).json({ error: 'Issue number is required' });
+            return;
+        }
+
+        const userConfig = await getUserRuntimeConfig(req.user!.id);
+
+        if (!userConfig.github.token) {
+            res.status(400).json({ error: 'GitHub token not configured. Please set it in Settings.' });
+            return;
+        }
+        if (!userConfig.github.owner) {
+            res.status(400).json({ error: 'GitHub owner not configured. Please set it in Settings.' });
+            return;
+        }
+
+        const userId = req.user!.id;
+        const userName = req.user!.github_login;
+        const targetIssue = parseInt(String(issueNumber), 10);
+
+        // For retries, find existing DB record to update in-place
+        let existingIssueMap: Map<number, number> | undefined;
+        if (rerun) {
+            const existing = await issueRepo.findLatestByIssueNumber(
+                userId, userConfig.github.owner, repo, targetIssue
+            );
+            if (existing) {
+                existingIssueMap = new Map([[existing.issue_number, existing.id]]);
+                log.info(`Retry of issue #${targetIssue}: updating existing DB record #${existing.id}`);
+            }
+        }
+
+        const tracker = new IssueTracker(userId, existingIssueMap);
+        const agent = new SuperAgent(tracker.createCallbacks(), userConfig);
+
+        setImmediate(() => {
+            log.info(`Fix triggered for ${userConfig.github.owner}/${repo} issue #${targetIssue} by ${userName}`);
+            agent.processRepo(repo, {
+                skipLabelFilter: !!rerun,
+                issueNumber: targetIssue,
+            }).catch((err) => {
+                log.error(`Fix failed for ${userConfig.github.owner}/${repo} issue #${targetIssue}`, {
+                    error: err.message, userId,
+                });
+            });
+        });
+
+        res.json({ message: `Fix triggered for issue #${targetIssue}` });
+    } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
 });

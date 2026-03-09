@@ -18,12 +18,9 @@ export class WebhookServer {
     }
 
     private setupRoutes(): void {
-        // Webhook needs raw body for signature verification
-        const webhookJsonParser = express.json({
-            verify: (req: any, _res, buf) => {
-                req.rawBody = buf;
-            },
-        });
+        // Use express.raw() to capture the body as a Buffer — this is immune to
+        // other middleware consuming the body stream before we can read it.
+        const rawBodyParser = express.raw({ type: 'application/json' });
 
         // Health check — verify DB connectivity
         this.app.get('/health', async (_req, res) => {
@@ -46,23 +43,56 @@ export class WebhookServer {
             res.status(statusCode).json(health);
         });
 
-        // GitHub webhook endpoint
-        this.app.post('/webhook', webhookJsonParser, async (req, res) => {
+        // GitHub webhook endpoint — body arrives as a raw Buffer via express.raw()
+        this.app.post('/webhook', rawBodyParser, async (req, res) => {
             try {
+                const rawBody = req.body as Buffer;
+                let payload: any;
+
+                try {
+                    payload = JSON.parse(rawBody.toString('utf8'));
+                } catch {
+                    log.error('Webhook body is not valid JSON', { bodyLength: rawBody?.length ?? 0 });
+                    res.status(400).json({ error: 'Invalid JSON body' });
+                    return;
+                }
+
                 // Verify webhook signature
                 if (config.github.webhookSecret) {
                     const signature = req.headers['x-hub-signature-256'] as string;
-                    if (!signature || !this.verifySignature((req as any).rawBody, signature)) {
-                        log.warn('Invalid webhook signature');
+
+                    log.info('Webhook signature verification', {
+                        hasSignatureHeader: !!signature,
+                        signaturePrefix: signature ? signature.substring(0, 20) + '...' : 'none',
+                        rawBodyLength: rawBody.length,
+                        configuredSecretLength: config.github.webhookSecret.length,
+                    });
+
+                    if (!signature) {
+                        log.warn('Missing x-hub-signature-256 header');
+                        res.status(401).json({ error: 'Missing signature header' });
+                        return;
+                    }
+
+                    if (!this.verifySignature(rawBody, signature)) {
+                        const expected = `sha256=${crypto
+                            .createHmac('sha256', config.github.webhookSecret)
+                            .update(rawBody)
+                            .digest('hex')}`;
+                        log.warn('Webhook signature mismatch', {
+                            received: signature.substring(0, 20) + '...',
+                            expected: expected.substring(0, 20) + '...',
+                        });
                         res.status(401).json({ error: 'Invalid signature' });
                         return;
                     }
+
+                    log.info('Webhook signature verified successfully');
                 } else {
                     log.warn('Webhook secret not configured — signature verification skipped');
                 }
 
                 const event = req.headers['x-github-event'] as string;
-                const payload = req.body;
 
                 if (!event) {
                     res.status(400).json({ error: 'Missing X-GitHub-Event header' });

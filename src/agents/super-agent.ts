@@ -31,7 +31,7 @@ export class SuperAgent {
     }
 
     async run(): Promise<void> {
-        log.info('Super Agent starting a new run...');
+        log.info('Super Agent starting...');
 
         try {
             const repos = await this.getTargetRepos();
@@ -60,7 +60,6 @@ export class SuperAgent {
 
         this.processingRepos.add(repoName);
         const github = new GitHubClient(this.cfg.github.owner, repoName, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
-        let runId: number | undefined;
 
         try {
             log.info(`--- Processing repo: ${this.cfg.github.owner}/${repoName} ---`);
@@ -92,11 +91,6 @@ export class SuperAgent {
 
             log.info(`Found ${issues.length} issue(s) in ${repoName}`);
 
-            // Track run start
-            if (this.callbacks?.onRunStart) {
-                runId = await this.callbacks.onRunStart(this.cfg.github.owner, repoName, issues.length);
-            }
-
             // Label all issues as "in-progress"
             for (const issue of issues) {
                 try {
@@ -108,7 +102,7 @@ export class SuperAgent {
             }
 
             // Spawn Worker Agents (concurrently with limit)
-            const { results: workerResults, issueDbIdMap } = await this.spawnWorkers(issues, github, repoName, runId);
+            const { results: workerResults, issueDbIdMap } = await this.spawnWorkers(issues, github, repoName);
 
             const successCount = workerResults.filter((r) => r.success).length;
             const failCount = workerResults.filter((r) => !r.success).length;
@@ -135,13 +129,13 @@ export class SuperAgent {
                     }
                 }
 
-                log.info(`Run complete for ${repoName}! ${reviewedPRs.length} PR(s) created.`);
+                log.info(`Processing complete for ${repoName}! ${reviewedPRs.length} PR(s) created.`);
                 this.logSummary(repoName, workerResults, reviewedPRs);
             } else {
                 log.warn(`No successful fixes in ${repoName} — no PRs will be created`);
             }
 
-            // Clean up "in-progress" label from all failed issues regardless of whether other issues succeeded
+            // Clean up "in-progress" label from all failed issues
             for (const result of workerResults) {
                 if (!result.success) {
                     try {
@@ -151,20 +145,8 @@ export class SuperAgent {
                     }
                 }
             }
-
-            // Track run completion
-            if (this.callbacks?.onRunComplete && runId) {
-                await this.callbacks.onRunComplete(runId, 'completed');
-            }
         } catch (error: any) {
             log.error(`Failed processing repo ${repoName}`, { error: error.message });
-            if (this.callbacks?.onRunComplete && runId) {
-                try {
-                    await this.callbacks.onRunComplete(runId, 'failed', error.message);
-                } catch (cbErr: any) {
-                    log.error(`Failed to update run status to failed`, { error: cbErr.message });
-                }
-            }
         } finally {
             this.processingRepos.delete(repoName);
         }
@@ -173,8 +155,7 @@ export class SuperAgent {
     private async spawnWorkers(
         issues: GitHubIssue[],
         github: GitHubClient,
-        repoName: string,
-        runId?: number
+        repoName: string
     ): Promise<{ results: WorkerResult[]; issueDbIdMap: Map<number, number> }> {
         const maxConcurrent = this.cfg.agent.maxConcurrentAgents;
         const results: WorkerResult[] = [];
@@ -191,10 +172,10 @@ export class SuperAgent {
             const batchPromises = batch.map(async (issue) => {
                 // Track issue start
                 let issueDbId: number | undefined;
-                if (this.callbacks?.onIssueStart && runId) {
+                if (this.callbacks?.onIssueStart) {
                     try {
                         issueDbId = await this.callbacks.onIssueStart(
-                            runId, issue.number, issue.title,
+                            issue.number, issue.title,
                             this.cfg.github.owner, repoName
                         );
                     } catch (cbErr: any) {
@@ -237,7 +218,7 @@ export class SuperAgent {
 
     private logSummary(repoName: string, workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
         log.info('='.repeat(60));
-        log.info(`  SUPER AGENT RUN SUMMARY — ${this.cfg.github.owner}/${repoName}`);
+        log.info(`  SUMMARY — ${this.cfg.github.owner}/${repoName}`);
         log.info('='.repeat(60));
 
         for (const result of workerResults) {

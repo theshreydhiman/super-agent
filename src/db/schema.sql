@@ -38,30 +38,9 @@ CREATE TABLE IF NOT EXISTS user_configs (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- ─── Agent execution runs ────────────────────────────────────
-CREATE TABLE IF NOT EXISTS agent_runs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    repo_owner VARCHAR(255) NOT NULL,
-    repo_name VARCHAR(255) NOT NULL,
-    status ENUM('running', 'completed', 'failed') NOT NULL DEFAULT 'running',
-    issues_found INT DEFAULT 0,
-    issues_processed INT DEFAULT 0,
-    prs_created INT DEFAULT 0,
-    error_message TEXT,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_status (user_id, status),
-    INDEX idx_user_repo (user_id, repo_owner, repo_name),
-    INDEX idx_started_at (started_at),
-    INDEX idx_status (status)
-);
-
 -- ─── Processed issues (per-issue tracking) ───────────────────
 CREATE TABLE IF NOT EXISTS processed_issues (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    run_id INT NOT NULL,
     user_id INT NOT NULL,
     repo_owner VARCHAR(255) NOT NULL,
     repo_name VARCHAR(255) NOT NULL,
@@ -76,9 +55,7 @@ CREATE TABLE IF NOT EXISTS processed_issues (
     error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_run_id (run_id),
     INDEX idx_user_repo (user_id, repo_owner, repo_name),
     INDEX idx_status (status),
     INDEX idx_issue_number (repo_owner, repo_name, issue_number),

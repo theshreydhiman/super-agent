@@ -5,7 +5,6 @@ import path from 'path';
 import { config } from './config';
 import authRoutes from './routes/auth-routes';
 import dashboardRoutes from './routes/dashboard-routes';
-import runRoutes from './routes/run-routes';
 import issueRoutes from './routes/issue-routes';
 import configRoutes from './routes/config-routes';
 import { errorHandler } from './middleware/error-handler';
@@ -89,7 +88,6 @@ export function createApp(): express.Application {
 
     // API routes
     app.use('/api/dashboard', dashboardRoutes);
-    app.use('/api/runs', runRoutes);
     app.use('/api/issues', issueRoutes);
     app.use('/api/config', configRoutes);
 
