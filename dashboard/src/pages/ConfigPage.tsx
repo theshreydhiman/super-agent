@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api/client';
+import { PageHeader } from '../components/Layout';
+import { Save, Zap, Github, Cpu, Settings2, CheckCircle, XCircle } from 'lucide-react';
 
 interface Repo {
     name: string;
@@ -21,8 +23,6 @@ export default function ConfigPage() {
     const [saving, setSaving] = useState(false);
     const [testResults, setTestResults] = useState<Record<string, TestResult> | null>(null);
     const [message, setMessage] = useState('');
-
-    // Form state (separate from saved config to track edits)
     const [form, setForm] = useState<Record<string, string>>({});
 
     useEffect(() => {
@@ -55,7 +55,6 @@ export default function ConfigPage() {
         setSaving(true);
         setMessage('');
         try {
-            // Only send fields that changed
             const changed: Record<string, string> = {};
             for (const [key, value] of Object.entries(form)) {
                 if (value !== configs[key]) {
@@ -99,150 +98,189 @@ export default function ConfigPage() {
         setForm((prev) => ({ ...prev, [key]: value }));
     };
 
-    if (loading) return <div className="text-gray-500">Loading...</div>;
+    if (loading) {
+        return (
+            <div className="flex flex-col min-h-screen">
+                <PageHeader title="Settings" subtitle="Configure your agent" />
+                <div className="flex-1 flex items-center justify-center text-text-muted font-mono text-sm">Loading...</div>
+            </div>
+        );
+    }
 
     const provider = form.ai_provider || 'gemini';
 
     return (
-        <div className="max-w-3xl">
-            <h2 className="text-2xl font-bold text-white mb-6">Settings</h2>
-
-            {message && (
-                <div className={`mb-4 p-3 rounded-lg text-sm ${message.includes('Error') || message.includes('failed') ? 'bg-red-900/20 text-red-400 border border-red-800' : 'bg-green-900/20 text-green-400 border border-green-800'}`}>
-                    {message}
-                </div>
-            )}
-
-            {/* GitHub Settings */}
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">GitHub Settings</h3>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Target Repository</label>
-                        {repos.length > 0 ? (
-                            <select
-                                value={form.github_repo || ''}
-                                onChange={(e) => updateField('github_repo', e.target.value)}
-                                className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
-                            >
-                                <option value="">All repositories (multi-repo mode)</option>
-                                {repos.map((r) => (
-                                    <option key={r.name} value={r.name}>{r.full_name} {r.private ? '(private)' : ''}</option>
-                                ))}
-                            </select>
-                        ) : (
-                            <Field label="" value={form.github_repo || ''} onChange={(v) => updateField('github_repo', v)} placeholder="repo-name (empty for all repos)" noLabel />
-                        )}
-                    </div>
-                    <Field label="Dev Branch" value={form.dev_branch || 'main'} onChange={(v) => updateField('dev_branch', v)} placeholder="main" />
-                    <Field label="Issue Label" value={form.issue_label || 'ai-agent'} onChange={(v) => updateField('issue_label', v)} placeholder="ai-agent" />
-                    <Field label="Webhook Secret" value={form.webhook_secret || ''} onChange={(v) => updateField('webhook_secret', v)} placeholder="your-webhook-secret" type="password" />
-                </div>
-            </section>
-
-            {/* AI Provider */}
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">AI Provider</h3>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Provider</label>
-                        <select
-                            value={provider}
-                            onChange={(e) => updateField('ai_provider', e.target.value)}
-                            className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
+        <div className="flex flex-col min-h-screen">
+            <PageHeader
+                title="Settings"
+                subtitle="Configure your agent"
+                actions={
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleTest}
+                            className="px-4 py-2.5 rounded-[10px] text-[13px] font-semibold bg-white/[0.06] text-text-secondary border border-border hover:bg-white/[0.1] hover:text-text-primary transition-all flex items-center gap-2"
                         >
-                            <option value="gemini">Google Gemini</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="claude">Claude (Anthropic)</option>
-                            <option value="groq">Groq</option>
-                        </select>
+                            <Zap size={14} />
+                            Test Connection
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-4 py-2.5 rounded-[10px] text-[13px] font-semibold bg-accent hover:bg-accent-hover text-white disabled:opacity-50 transition-all hover:glow-accent flex items-center gap-2"
+                        >
+                            <Save size={14} />
+                            {saving ? 'Saving...' : 'Save Settings'}
+                        </button>
                     </div>
+                }
+            />
 
-                    {provider === 'gemini' ? (
-                        <>
-                            <Field label="Gemini API Key" value={form.gemini_api_key || ''} onChange={(v) => updateField('gemini_api_key', v)} placeholder="Enter API key" type="password" />
-                            <Field label="Gemini Model" value={form.gemini_model || 'gemini-2.0-flash'} onChange={(v) => updateField('gemini_model', v)} placeholder="gemini-2.0-flash" />
-                        </>
-                    ) : null}
-                    {provider === 'openai' ? (
-                        <>
-                            <Field label="OpenAI API Key" value={form.openai_api_key || ''} onChange={(v) => updateField('openai_api_key', v)} placeholder="sk-..." type="password" />
-                            <Field label="OpenAI Model" value={form.openai_model || 'gpt-4o'} onChange={(v) => updateField('openai_model', v)} placeholder="gpt-4o" />
-                        </>
-                    ) : null}
-                    {provider === 'claude' ? (
-                        <>
-                            <Field label="Claude API Key" value={form.claude_api_key || ''} onChange={(v) => updateField('claude_api_key', v)} placeholder="sk-ant-..." type="password" />
-                            <Field label="Claude Model" value={form.claude_model || 'claude-sonnet-4-6'} onChange={(v) => updateField('claude_model', v)} placeholder="claude-sonnet-4-6" />
-                        </>
-                    ) : null}
-                    {provider === 'groq' ? (
-                        <>
-                            <Field label="Groq API Key" value={form.groq_api_key || ''} onChange={(v) => updateField('groq_api_key', v)} placeholder="gsk_..." type="password" />
-                            <Field label="Groq Model" value={form.groq_model || 'llama-3.3-70b-versatile'} onChange={(v) => updateField('groq_model', v)} placeholder="llama-3.3-70b-versatile" />
-                        </>
-                    ) : null}
-                </div>
-            </section>
-
-            {/* Agent Settings */}
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Agent Settings</h3>
-                <div className="space-y-4">
-                    <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={() => console.log("Max concurrent agents changed")} placeholder="3" disabled />
-                </div>
-            </section>
-
-            {/* Test Results */}
-            {testResults && (
-                <div className="mb-6 space-y-2">
-                    {Object.entries(testResults).map(([key, result]) => (
-                        <div key={key} className={`p-3 rounded-lg text-sm border ${result.success ? 'bg-green-900/20 text-green-400 border-green-800' : 'bg-red-900/20 text-red-400 border-red-800'}`}>
-                            <span className="font-medium capitalize">{key}:</span> {result.message}
+            <div className="flex-1 dot-grid p-7">
+                <div className="max-w-3xl">
+                    {message && (
+                        <div className={`mb-5 p-3 rounded-lg text-sm font-mono border ${
+                            message.includes('Error') || message.includes('failed')
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : 'bg-green-500/10 text-green-400 border-green-500/20'
+                        }`}>
+                            {message}
                         </div>
-                    ))}
-                </div>
-            )}
+                    )}
 
-            {/* Actions */}
-            <div className="flex gap-3">
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                >
-                    {saving ? 'Saving...' : 'Save Settings'}
-                </button>
-                <button
-                    onClick={handleTest}
-                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-6 py-2 rounded-lg font-medium transition-colors border border-gray-700"
-                >
-                    Test Connection
-                </button>
+                    {/* Test Results */}
+                    {testResults && (
+                        <div className="mb-5 space-y-2">
+                            {Object.entries(testResults).map(([key, result]) => (
+                                <div key={key} className={`p-3 rounded-lg text-sm border font-mono flex items-center gap-2 ${
+                                    result.success
+                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                        : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                }`}>
+                                    {result.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                                    <span className="font-semibold capitalize">{key}:</span> {result.message}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* GitHub Settings */}
+                    <Section icon={Github} title="GitHub Settings">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[12px] text-text-muted mb-1.5 font-mono uppercase tracking-wide">Target Repository</label>
+                                {repos.length > 0 ? (
+                                    <select
+                                        value={form.github_repo || ''}
+                                        onChange={(e) => updateField('github_repo', e.target.value)}
+                                        className="w-full bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2.5 text-sm font-mono focus:border-accent focus:outline-none transition-colors"
+                                    >
+                                        <option value="">All repositories (multi-repo mode)</option>
+                                        {repos.map((r) => (
+                                            <option key={r.name} value={r.name}>{r.full_name} {r.private ? '(private)' : ''}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <Field value={form.github_repo || ''} onChange={(v) => updateField('github_repo', v)} placeholder="repo-name (empty for all repos)" />
+                                )}
+                            </div>
+                            <Field label="Dev Branch" value={form.dev_branch || 'main'} onChange={(v) => updateField('dev_branch', v)} placeholder="main" />
+                            <Field label="Issue Label" value={form.issue_label || 'ai-agent'} onChange={(v) => updateField('issue_label', v)} placeholder="ai-agent" />
+                            <Field label="Webhook Secret" value={form.webhook_secret || ''} onChange={(v) => updateField('webhook_secret', v)} placeholder="your-webhook-secret" type="password" />
+                        </div>
+                    </Section>
+
+                    {/* AI Provider */}
+                    <Section icon={Cpu} title="AI Provider">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[12px] text-text-muted mb-1.5 font-mono uppercase tracking-wide">Provider</label>
+                                <select
+                                    value={provider}
+                                    onChange={(e) => updateField('ai_provider', e.target.value)}
+                                    className="w-full bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2.5 text-sm font-mono focus:border-accent focus:outline-none transition-colors"
+                                >
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="claude">Claude (Anthropic)</option>
+                                    <option value="groq">Groq</option>
+                                </select>
+                            </div>
+
+                            {provider === 'gemini' && (
+                                <>
+                                    <Field label="Gemini API Key" value={form.gemini_api_key || ''} onChange={(v) => updateField('gemini_api_key', v)} placeholder="Enter API key" type="password" />
+                                    <Field label="Gemini Model" value={form.gemini_model || 'gemini-2.0-flash'} onChange={(v) => updateField('gemini_model', v)} placeholder="gemini-2.0-flash" />
+                                </>
+                            )}
+                            {provider === 'openai' && (
+                                <>
+                                    <Field label="OpenAI API Key" value={form.openai_api_key || ''} onChange={(v) => updateField('openai_api_key', v)} placeholder="sk-..." type="password" />
+                                    <Field label="OpenAI Model" value={form.openai_model || 'gpt-4o'} onChange={(v) => updateField('openai_model', v)} placeholder="gpt-4o" />
+                                </>
+                            )}
+                            {provider === 'claude' && (
+                                <>
+                                    <Field label="Claude API Key" value={form.claude_api_key || ''} onChange={(v) => updateField('claude_api_key', v)} placeholder="sk-ant-..." type="password" />
+                                    <Field label="Claude Model" value={form.claude_model || 'claude-sonnet-4-6'} onChange={(v) => updateField('claude_model', v)} placeholder="claude-sonnet-4-6" />
+                                </>
+                            )}
+                            {provider === 'groq' && (
+                                <>
+                                    <Field label="Groq API Key" value={form.groq_api_key || ''} onChange={(v) => updateField('groq_api_key', v)} placeholder="gsk_..." type="password" />
+                                    <Field label="Groq Model" value={form.groq_model || 'llama-3.3-70b-versatile'} onChange={(v) => updateField('groq_model', v)} placeholder="llama-3.3-70b-versatile" />
+                                </>
+                            )}
+                        </div>
+                    </Section>
+
+                    {/* Agent Settings */}
+                    <Section icon={Settings2} title="Agent Settings">
+                        <div className="space-y-4">
+                            <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={() => {}} placeholder="3" disabled />
+                        </div>
+                    </Section>
+                </div>
             </div>
         </div>
     );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', noLabel = false, disabled = false }: {
-    label: string;
+function Section({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+    return (
+        <section className="bg-surface border border-border rounded-xl p-6 mb-5">
+            <div className="flex items-center gap-3 mb-5">
+                <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
+                    <Icon size={16} className="text-accent-text" />
+                </div>
+                <h3 className="text-[15px] font-semibold text-zinc-100">{title}</h3>
+            </div>
+            {children}
+        </section>
+    );
+}
+
+function Field({ label, value, onChange, placeholder, type = 'text', disabled = false }: {
+    label?: string;
     value: string;
     onChange: (v: string) => void;
     placeholder?: string;
     type?: string;
-    noLabel?: boolean;
     disabled?: boolean;
 }) {
     return (
         <div>
-            {!noLabel && label && <label className="block text-sm text-gray-400 mb-1">{label}</label>}
+            {label && (
+                <label className="block text-[12px] text-text-muted mb-1.5 font-mono uppercase tracking-wide">{label}</label>
+            )}
             <input
                 type={type}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 disabled={disabled}
-                className={`w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`w-full bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2.5 text-sm font-mono focus:border-accent focus:outline-none transition-colors placeholder:text-text-dim ${
+                    disabled ? 'opacity-40 cursor-not-allowed' : ''
+                }`}
             />
         </div>
     );
