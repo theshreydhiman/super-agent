@@ -8,13 +8,18 @@ import { config } from '../config';
 
 const log = createLogger('ReviewerAgent');
 
+const REVIEW_SCORE_THRESHOLD = 7;
+const MAX_REWORK_ATTEMPTS = 3;
+
 export interface ReviewedPR {
     issueNumber: number;
     issueTitle: string;
     prNumber: number;
     prUrl: string;
     reviewApproved: boolean;
+    reviewScore: number;
     reviewFeedback: string;
+    reworkAttempts: number;
 }
 
 export class ReviewerAgent {
@@ -33,9 +38,10 @@ export class ReviewerAgent {
     /**
      * Reviews all completed worker results and creates PRs.
      * 1. Fetches the diff for each branch
-     * 2. Reviews with AI
-     * 3. Creates PRs for approved changes
-     * 4. Sends email notifications
+     * 2. Reviews with AI and scores out of 10
+     * 3. If score < 7, re-runs the worker with review feedback (up to MAX_REWORK_ATTEMPTS)
+     * 4. Creates PRs only once score >= 7 or max attempts exhausted
+     * 5. Sends email notifications
      */
     async reviewAndCreatePRs(workerResults: WorkerResult[]): Promise<ReviewedPR[]> {
         const successfulResults = workerResults.filter((r) => r.success);
@@ -48,12 +54,21 @@ export class ReviewerAgent {
         log.info(`Reviewing ${successfulResults.length} completed fixes...`);
 
         const reviewedPRs: ReviewedPR[] = [];
+        const failedReviews: {
+            issueNumber: number;
+            issueTitle: string;
+            lastScore: number;
+            reworkAttempts: number;
+            lastFeedback: string;
+        }[] = [];
 
         for (const result of successfulResults) {
             try {
-                const pr = await this.reviewAndCreateSinglePR(result);
-                if (pr) {
-                    reviewedPRs.push(pr);
+                const outcome = await this.reviewWithReworkLoop(result);
+                if (outcome.pr) {
+                    reviewedPRs.push(outcome.pr);
+                } else if (outcome.failure) {
+                    failedReviews.push(outcome.failure);
                 }
             } catch (error: any) {
                 log.error(`Failed to review/create PR for issue #${result.issueNumber}`, {
@@ -62,67 +77,232 @@ export class ReviewerAgent {
             }
         }
 
-        // Send consolidated email notification
+        // Send consolidated email notification for successful PRs
         if (reviewedPRs.length > 0) {
             try {
-                await this.emailService.sendPRNotification(reviewedPRs);
+                const repoFullName = `${this.cfg.github.owner}/${this.cfg.github.repo}`;
+                await this.emailService.sendPRNotification(reviewedPRs, repoFullName);
                 log.info(`Email notification sent for ${reviewedPRs.length} PRs`);
             } catch (error: any) {
                 log.error('Failed to send email notification', { error: error.message });
             }
         }
 
+        // Send email notification for issues that need manual intervention
+        if (failedReviews.length > 0) {
+            try {
+                const failRepoFullName = `${this.cfg.github.owner}/${this.cfg.github.repo}`;
+                await this.emailService.sendManualInterventionNotification(failedReviews, failRepoFullName);
+                log.info(`Manual intervention email sent for ${failedReviews.length} issue(s)`);
+            } catch (error: any) {
+                log.error('Failed to send manual intervention email', { error: error.message });
+            }
+        }
+
         return reviewedPRs;
     }
 
-    private async reviewAndCreateSinglePR(result: WorkerResult): Promise<ReviewedPR | null> {
-        log.info(`Reviewing changes for issue #${result.issueNumber}...`);
+    private async reviewWithReworkLoop(result: WorkerResult): Promise<{
+        pr: ReviewedPR | null;
+        failure: { issueNumber: number; issueTitle: string; lastScore: number; reworkAttempts: number; lastFeedback: string } | null;
+    }> {
+        let attempt = 0;
+        let currentResult = result;
 
-        // Step 1: Get the diff between dev and the fix branch
-        const diffs = await this.github.compareBranches(
-            this.cfg.github.devBranch,
-            result.branchName
-        );
+        while (true) {
+            log.info(`Reviewing changes for issue #${currentResult.issueNumber} (attempt ${attempt + 1})...`);
 
-        if (diffs.length === 0) {
-            log.warn(`No diffs found for branch "${result.branchName}", skipping`);
-            return null;
+            // Step 1: Get the diff
+            const diffs = await this.github.compareBranches(
+                this.cfg.github.devBranch,
+                currentResult.branchName
+            );
+
+            if (diffs.length === 0) {
+                log.warn(`No diffs found for branch "${currentResult.branchName}", skipping`);
+                return { pr: null, failure: null };
+            }
+
+            // Step 2: Review with AI (includes score)
+            const review = await this.ai.reviewChanges(
+                currentResult.issueTitle,
+                currentResult.issueBody,
+                diffs
+            );
+
+            log.info(`Review for issue #${currentResult.issueNumber}:`, {
+                score: review.score,
+                approved: review.approved,
+                feedback: review.feedback.substring(0, 200),
+            });
+
+            // Step 3: Check if score meets threshold
+            if (review.score >= REVIEW_SCORE_THRESHOLD) {
+                log.info(`Score ${review.score}/10 meets threshold for issue #${currentResult.issueNumber}. Creating PR.`);
+
+                // Comment the review on the issue
+                await this.postReviewComment(currentResult, review, attempt, true);
+
+                // Create the PR
+                const pr = await this.createPR(currentResult, review, attempt);
+                return { pr, failure: null };
+            }
+
+            // Score below threshold
+            attempt++;
+
+            if (attempt >= MAX_REWORK_ATTEMPTS) {
+                log.warn(
+                    `Issue #${currentResult.issueNumber} scored ${review.score}/10 after ${attempt} rework attempt(s). ` +
+                    `Max attempts reached — skipping PR creation.`
+                );
+
+                await this.postReviewComment(currentResult, review, attempt, false);
+
+                // Comment that the fix could not meet quality standards
+                await this.github.addIssueComment(
+                    currentResult.issueNumber,
+                    `**🚨 Manual Intervention Required**\n\n` +
+                    `The AI agent was unable to produce a fix that meets the quality threshold ` +
+                    `(final score: ${review.score}/10, required: ${REVIEW_SCORE_THRESHOLD}/10) after ${attempt} rework attempt(s).\n\n` +
+                    `**Last review feedback:** ${review.feedback}\n\n` +
+                    `This issue needs to be resolved manually by a developer.`
+                );
+
+                // Add label to flag for manual attention
+                try {
+                    await this.github.removeLabel(currentResult.issueNumber, 'in-progress');
+                    await this.github.addLabel(currentResult.issueNumber, 'needs-manual-fix');
+                } catch {
+                    // Best effort
+                }
+
+                return {
+                    pr: null,
+                    failure: {
+                        issueNumber: currentResult.issueNumber,
+                        issueTitle: currentResult.issueTitle,
+                        lastScore: review.score,
+                        reworkAttempts: attempt,
+                        lastFeedback: review.feedback,
+                    },
+                };
+            }
+
+            // Score too low — rework
+            log.info(
+                `Score ${review.score}/10 below threshold for issue #${currentResult.issueNumber}. ` +
+                `Requesting rework (attempt ${attempt}/${MAX_REWORK_ATTEMPTS})...`
+            );
+
+            await this.postReviewComment(currentResult, review, attempt, false);
+
+            // Re-run the fix with review feedback
+            await this.reworkFix(currentResult, review);
         }
+    }
 
-        // Step 2: Review the changes with AI (pass actual issue body for context)
-        const review = await this.ai.reviewChanges(
-            result.issueTitle,
-            result.issueBody,
-            diffs
-        );
-
-        log.info(`Review for issue #${result.issueNumber}:`, {
-            approved: review.approved,
-            feedback: review.feedback.substring(0, 200),
-        });
-
-        // Step 3: Comment review feedback on the issue
+    private async postReviewComment(
+        result: WorkerResult,
+        review: { approved: boolean; score: number; feedback: string; suggestions: string[] },
+        attempt: number,
+        willCreatePR: boolean
+    ): Promise<void> {
+        const attemptInfo = attempt > 0 ? ` (after ${attempt} rework attempt(s))` : '';
         const reviewComment =
-            `**AI Code Review for branch \`${result.branchName}\`**\n\n` +
+            `**AI Code Review for branch \`${result.branchName}\`${attemptInfo}**\n\n` +
+            `**Score:** ${review.score}/10\n` +
             `**Status:** ${review.approved ? 'Approved' : 'Needs attention'}\n\n` +
             `**Feedback:** ${review.feedback}\n\n` +
             (review.suggestions.length > 0
                 ? `**Suggestions:**\n${review.suggestions.map((s) => `- ${s}`).join('\n')}\n\n`
                 : '') +
-            (review.approved
+            (willCreatePR
                 ? 'A pull request will be created for this fix.'
-                : 'A PR will still be created, but please review the suggestions above.');
+                : `Score is below the required threshold of ${REVIEW_SCORE_THRESHOLD}/10. The worker agent will rework the fix based on the feedback above.`);
 
         await this.github.addIssueComment(result.issueNumber, reviewComment);
+    }
 
-        // Step 4: Generate PR description
+    private async reworkFix(
+        result: WorkerResult,
+        review: { feedback: string; suggestions: string[]; score: number }
+    ): Promise<void> {
+        log.info(`Reworking fix for issue #${result.issueNumber} based on review feedback...`);
+
+        // Fetch current file contents from the fix branch
+        const fileContents: Record<string, string> = {};
+        for (const change of result.changes) {
+            try {
+                fileContents[change.filePath] = await this.github.getFileContent(
+                    change.filePath,
+                    result.branchName
+                );
+            } catch {
+                log.warn(`Could not read file "${change.filePath}" from branch "${result.branchName}"`);
+                fileContents[change.filePath] = change.newContent;
+            }
+        }
+
+        // Build a rework approach that includes the review feedback
+        const reviewContext =
+            `Previous attempt scored ${review.score}/10. The reviewer provided the following feedback:\n\n` +
+            `Feedback: ${review.feedback}\n\n` +
+            (review.suggestions.length > 0
+                ? `Suggestions to address:\n${review.suggestions.map((s) => `- ${s}`).join('\n')}\n\n`
+                : '') +
+            `Please fix the issues identified in the review while still addressing the original issue.`;
+
+        // Generate improved fix
+        const changes = await this.ai.generateFix(
+            result.issueTitle,
+            result.issueBody,
+            fileContents,
+            reviewContext
+        );
+
+        if (changes.length === 0) {
+            log.warn(`Rework produced no changes for issue #${result.issueNumber}`);
+            return;
+        }
+
+        // Commit the reworked changes to the same branch
+        const fileChanges = changes.map((change) => ({
+            path: change.filePath,
+            content: change.newContent,
+            message: `fix(#${result.issueNumber}): rework based on review feedback`,
+        }));
+
+        await this.github.commitMultipleFiles(
+            fileChanges,
+            result.branchName,
+            `fix(#${result.issueNumber}): rework — address review feedback (score: ${review.score}/10)`
+        );
+
+        // Update the result's changes in-place so the next review sees current state
+        result.changes = changes;
+
+        log.info(`Rework committed to branch "${result.branchName}" for issue #${result.issueNumber}`);
+    }
+
+    private async createPR(
+        result: WorkerResult,
+        review: { approved: boolean; score: number; feedback: string },
+        reworkAttempts: number
+    ): Promise<ReviewedPR> {
+        // Generate PR description
+        const diffs = await this.github.compareBranches(
+            this.cfg.github.devBranch,
+            result.branchName
+        );
+
         const prBody = await this.ai.generatePRDescription(
             result.issueTitle,
             result.issueNumber,
             diffs.map((d) => ({ filename: d.filename, patch: d.patch }))
         );
 
-        // Step 5: Create the PR (even if review has suggestions — let the human decide)
+        // Create the PR
         const pr = await this.github.createPullRequest(
             result.branchName,
             this.cfg.github.devBranch,
@@ -130,7 +310,7 @@ export class ReviewerAgent {
             prBody
         );
 
-        // Step 6: Update labels
+        // Update labels
         try {
             await this.github.removeLabel(result.issueNumber, 'in-progress');
             await this.github.addLabel(result.issueNumber, 'ai-pr-created');
@@ -146,7 +326,9 @@ export class ReviewerAgent {
             prNumber: pr.number,
             prUrl: pr.url,
             reviewApproved: review.approved,
+            reviewScore: review.score,
             reviewFeedback: review.feedback,
+            reworkAttempts,
         };
     }
 }

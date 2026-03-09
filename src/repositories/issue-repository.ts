@@ -14,6 +14,7 @@ export interface ProcessedIssue {
     pr_number: number | null;
     pr_url: string | null;
     review_approved: boolean | null;
+    review_score: number | null;
     error_message: string | null;
     created_at: Date;
     updated_at: Date;
@@ -46,7 +47,7 @@ export class IssueRepository {
 
     async update(
         id: number,
-        data: Partial<Pick<ProcessedIssue, 'status' | 'branch_name' | 'pr_number' | 'pr_url' | 'review_approved' | 'error_message'>>
+        data: Partial<Pick<ProcessedIssue, 'status' | 'branch_name' | 'pr_number' | 'pr_url' | 'review_approved' | 'review_score' | 'error_message'>>
     ): Promise<void> {
         const fields: string[] = [];
         const values: any[] = [];
@@ -71,7 +72,7 @@ export class IssueRepository {
         const pool = getPool();
         await pool.execute(
             `UPDATE processed_issues SET status = 'processing', branch_name = NULL,
-             pr_number = NULL, pr_url = NULL, review_approved = NULL, error_message = NULL WHERE id = ?`,
+             pr_number = NULL, pr_url = NULL, review_approved = NULL, review_score = NULL, error_message = NULL WHERE id = ?`,
             [id]
         );
     }

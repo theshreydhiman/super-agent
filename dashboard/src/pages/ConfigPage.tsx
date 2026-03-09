@@ -117,8 +117,6 @@ export default function ConfigPage() {
             <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
                 <h3 className="text-lg font-semibold text-white mb-4">GitHub Settings</h3>
                 <div className="space-y-4">
-                    <Field label="GitHub Personal Access Token" value={form.github_token || ''} onChange={(v) => updateField('github_token', v)} placeholder="ghp_... or github_pat_..." type="password" />
-                    <Field label="GitHub Owner" value={form.github_owner || ''} onChange={(v) => updateField('github_owner', v)} placeholder="your-username" />
                     <div>
                         <label className="block text-sm text-gray-400 mb-1">Target Repository</label>
                         {repos.length > 0 ? (
@@ -191,18 +189,7 @@ export default function ConfigPage() {
             <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Agent Settings</h3>
                 <div className="space-y-4">
-                    <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={(v) => updateField('max_concurrent_agents', v)} placeholder="3" />
-                </div>
-            </section>
-
-            {/* Email Notifications */}
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Email Notifications (EmailJS)</h3>
-                <div className="space-y-4">
-                    <Field label="Service ID" value={form.emailjs_service_id || ''} onChange={(v) => updateField('emailjs_service_id', v)} placeholder="service_..." />
-                    <Field label="Template ID" value={form.emailjs_template_id || ''} onChange={(v) => updateField('emailjs_template_id', v)} placeholder="template_..." />
-                    <Field label="Public Key" value={form.emailjs_public_key || ''} onChange={(v) => updateField('emailjs_public_key', v)} placeholder="Public key" />
-                    <Field label="Private Key" value={form.emailjs_private_key || ''} onChange={(v) => updateField('emailjs_private_key', v)} placeholder="Private key" type="password" />
+                    <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={() => console.log("Max concurrent agents changed")} placeholder="3" disabled />
                 </div>
             </section>
 
@@ -237,13 +224,14 @@ export default function ConfigPage() {
     );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', noLabel = false }: {
+function Field({ label, value, onChange, placeholder, type = 'text', noLabel = false, disabled = false }: {
     label: string;
     value: string;
     onChange: (v: string) => void;
     placeholder?: string;
     type?: string;
     noLabel?: boolean;
+    disabled?: boolean;
 }) {
     return (
         <div>
@@ -253,7 +241,8 @@ function Field({ label, value, onChange, placeholder, type = 'text', noLabel = f
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
-                className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                disabled={disabled}
+                className={`w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             />
         </div>
     );

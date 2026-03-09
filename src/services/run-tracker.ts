@@ -59,6 +59,7 @@ export class IssueTracker {
                     pr_number: pr.prNumber,
                     pr_url: pr.prUrl,
                     review_approved: pr.reviewApproved,
+                    review_score: pr.reviewScore,
                 });
                 log.info(`PR #${pr.prNumber} recorded for issue DB id ${issueDbId}`);
             },

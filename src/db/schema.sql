@@ -2,6 +2,14 @@
 -- Super Agent — Database Schema
 -- ═══════════════════════════════════════════════════════════════
 
+-- ─── Sessions (auto-managed by express-mysql-session) ─────────
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id VARCHAR(128) NOT NULL PRIMARY KEY,
+    expires INT UNSIGNED NOT NULL,
+    data MEDIUMTEXT,
+    INDEX idx_expires (expires)
+);
+
 -- ─── System-wide configuration (OAuth credentials, etc.) ─────
 CREATE TABLE IF NOT EXISTS system_configs (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -52,6 +60,7 @@ CREATE TABLE IF NOT EXISTS processed_issues (
     pr_number INT,
     pr_url VARCHAR(512),
     review_approved BOOLEAN,
+    review_score INT,
     error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
