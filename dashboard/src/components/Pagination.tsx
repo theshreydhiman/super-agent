@@ -1,3 +1,5 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 interface PaginationProps {
     page: number;
     total: number;
@@ -11,24 +13,26 @@ export default function Pagination({ page, total, limit, onPageChange }: Paginat
     if (totalPages <= 1) return null;
 
     return (
-        <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-gray-500">
-                Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
+        <div className="flex items-center justify-between mt-4 px-6 py-3 border-t border-border">
+            <p className="text-[12px] text-text-muted font-mono">
+                {(page - 1) * limit + 1}&ndash;{Math.min(page * limit, total)} of {total}
             </p>
             <div className="flex gap-2">
                 <button
                     onClick={() => onPageChange(page - 1)}
                     disabled={page <= 1}
-                    className="px-3 py-1 text-sm rounded bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm rounded-lg bg-white/[0.04] text-text-secondary border border-border hover:bg-white/[0.08] hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1"
                 >
-                    Previous
+                    <ChevronLeft size={14} />
+                    Prev
                 </button>
                 <button
                     onClick={() => onPageChange(page + 1)}
                     disabled={page >= totalPages}
-                    className="px-3 py-1 text-sm rounded bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm rounded-lg bg-white/[0.04] text-text-secondary border border-border hover:bg-white/[0.08] hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1"
                 >
                     Next
+                    <ChevronRight size={14} />
                 </button>
             </div>
         </div>
