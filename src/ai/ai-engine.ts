@@ -103,12 +103,7 @@ export class AIEngine {
         } else {
             if (!this.cfg.gemini.apiKey) throw new Error('Gemini API key is required. Set it in Settings.');
             this.genAI = new GoogleGenerativeAI(this.cfg.gemini.apiKey);
-            this.geminiModel = this.genAI.getGenerativeModel({
-                model: this.cfg.gemini.model,
-                generationConfig: {
-                    responseMimeType: 'application/json',
-                },
-            });
+            this.geminiModel = this.genAI.getGenerativeModel({ model: this.cfg.gemini.model });
             log.info(`AI Engine initialized with Gemini (${this.cfg.gemini.model})`);
         }
 

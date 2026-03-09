@@ -9,7 +9,6 @@ interface LayoutProps {
 
 const navItems = [
     { path: '/', label: 'Dashboard', icon: '📊' },
-    { path: '/runs', label: 'Runs', icon: '🔄' },
     { path: '/issues', label: 'Issues', icon: '🐛' },
     { path: '/config', label: 'Settings', icon: '⚙️' },
 ];
