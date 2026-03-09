@@ -3,13 +3,11 @@ import { encrypt, decrypt, maskSecret } from '../services/encryption';
 import { RowDataPacket } from 'mysql2';
 
 const SENSITIVE_KEYS = [
-    'github_token',
     'gemini_api_key',
     'openai_api_key',
     'claude_api_key',
     'groq_api_key',
     'webhook_secret',
-    'emailjs_private_key',
 ];
 
 export class ConfigRepository {

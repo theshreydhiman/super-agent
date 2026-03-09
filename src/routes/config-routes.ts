@@ -7,8 +7,6 @@ const router = Router();
 const configRepo = new ConfigRepository();
 
 const ALLOWED_KEYS = new Set([
-    'github_token',
-    'github_owner',
     'github_repo',
     'dev_branch',
     'issue_label',
@@ -23,10 +21,6 @@ const ALLOWED_KEYS = new Set([
     'groq_api_key',
     'groq_model',
     'max_concurrent_agents',
-    'emailjs_service_id',
-    'emailjs_template_id',
-    'emailjs_public_key',
-    'emailjs_private_key',
 ]);
 
 const VALID_PROVIDERS = new Set(['gemini', 'openai', 'claude', 'groq']);

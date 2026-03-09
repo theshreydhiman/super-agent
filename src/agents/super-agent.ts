@@ -18,11 +18,11 @@ export class SuperAgent {
     private callbacks?: AgentCallbacks;
     private cfg: UserRuntimeConfig | typeof config;
 
-    constructor(callbacks?: AgentCallbacks, userConfig?: UserRuntimeConfig) {
+    constructor(callbacks?: AgentCallbacks, userConfig?: UserRuntimeConfig, userEmail?: string | null) {
         this.cfg = userConfig || config;
         this.discoveryClient = new GitHubClient(undefined, undefined, userConfig);
         this.ai = new AIEngine(userConfig);
-        this.emailService = new EmailService(userConfig);
+        this.emailService = new EmailService(userEmail);
         this.callbacks = callbacks;
     }
 
@@ -228,7 +228,8 @@ export class SuperAgent {
 
         for (const pr of reviewedPRs) {
             const reviewStatus = pr.reviewApproved ? 'Approved' : 'Needs Review';
-            log.info(`  [${reviewStatus}] PR #${pr.prNumber}: ${pr.prUrl} (issue #${pr.issueNumber})`);
+            const reworkInfo = pr.reworkAttempts > 0 ? ` [${pr.reworkAttempts} rework(s)]` : '';
+            log.info(`  [${reviewStatus}] PR #${pr.prNumber}: ${pr.prUrl} (issue #${pr.issueNumber}, score: ${pr.reviewScore}/10${reworkInfo})`);
         }
     }
 }

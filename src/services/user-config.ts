@@ -19,12 +19,6 @@ export interface UserRuntimeConfig {
     openai: { apiKey: string; model: string };
     claude: { apiKey: string; model: string };
     groq: { apiKey: string; model: string };
-    emailjs: {
-        serviceId: string;
-        templateId: string;
-        publicKey: string;
-        privateKey: string;
-    };
     agent: { maxConcurrentAgents: number };
 }
 
@@ -33,8 +27,10 @@ const configRepo = new ConfigRepository();
 /**
  * Loads all user_configs from the DB and merges them with .env defaults.
  * DB values take precedence over .env.
+ * The GitHub OAuth token is passed in directly from the user's session —
+ * no need for a separate PAT.
  */
-export async function getUserRuntimeConfig(userId: number): Promise<UserRuntimeConfig> {
+export async function getUserRuntimeConfig(userId: number, oauthToken: string, githubLogin: string): Promise<UserRuntimeConfig> {
     const db = await configRepo.getAll(userId);
 
     const get = (key: string, fallback: string): string =>
@@ -42,8 +38,8 @@ export async function getUserRuntimeConfig(userId: number): Promise<UserRuntimeC
 
     return {
         github: {
-            token: get('github_token', config.github.token),
-            owner: get('github_owner', config.github.owner),
+            token: oauthToken,
+            owner: get('github_owner', githubLogin),
             repo: get('github_repo', config.github.repo),
             devBranch: get('dev_branch', config.github.devBranch),
             issueLabel: get('issue_label', config.github.issueLabel),
@@ -65,12 +61,6 @@ export async function getUserRuntimeConfig(userId: number): Promise<UserRuntimeC
         groq: {
             apiKey: get('groq_api_key', config.groq.apiKey),
             model: get('groq_model', config.groq.model),
-        },
-        emailjs: {
-            serviceId: get('emailjs_service_id', config.emailjs.serviceId),
-            templateId: get('emailjs_template_id', config.emailjs.templateId),
-            publicKey: get('emailjs_public_key', config.emailjs.publicKey),
-            privateKey: get('emailjs_private_key', config.emailjs.privateKey),
         },
         agent: {
             maxConcurrentAgents: parseInt(get('max_concurrent_agents', String(config.agent.maxConcurrentAgents)), 10) || 3,

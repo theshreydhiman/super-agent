@@ -2,42 +2,43 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-    // GitHub OAuth (kept in .env — required for server startup)
+    // GitHub OAuth (global — required for server startup)
     github: {
         clientId: process.env.GITHUB_CLIENT_ID || '',
         clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
-        // Defaults used when no user-specific config exists in DB
-        token: process.env.GITHUB_TOKEN || '',
-        owner: process.env.GITHUB_OWNER || '',
-        repo: process.env.GITHUB_REPO || '',
-        devBranch: process.env.DEV_BRANCH || 'main',
-        issueLabel: process.env.ISSUE_LABEL || 'ai-agent',
+        // User-level defaults (empty — resolved per-user from DB)
+        token: '',
+        owner: '',
+        repo: '',
+        devBranch: 'main',
+        issueLabel: 'ai-agent',
         webhookSecret: process.env.WEBHOOK_SECRET || '',
     },
 
-    // AI Provider defaults (overridden per-user from DB)
-    aiProvider: (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai' | 'claude' | 'groq',
+    // User-level defaults (resolved per-user from DB)
+    aiProvider: 'gemini' as 'gemini' | 'openai' | 'claude' | 'groq',
 
     gemini: {
-        apiKey: process.env.GEMINI_API_KEY || '',
-        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        apiKey: '',
+        model: 'gemini-2.0-flash',
     },
 
     openai: {
-        apiKey: process.env.OPENAI_API_KEY || '',
-        model: process.env.OPENAI_MODEL || 'gpt-4o',
+        apiKey: '',
+        model: 'gpt-4o',
     },
 
     claude: {
-        apiKey: process.env.CLAUDE_API_KEY || '',
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+        apiKey: '',
+        model: 'claude-sonnet-4-6',
     },
 
     groq: {
-        apiKey: process.env.GROQ_API_KEY || '',
-        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        apiKey: '',
+        model: 'llama-3.3-70b-versatile',
     },
 
+    // EmailJS (global — from .env, not per-user)
     emailjs: {
         serviceId: process.env.EMAILJS_SERVICE_ID || '',
         templateId: process.env.EMAILJS_TEMPLATE_ID || '',
@@ -52,7 +53,7 @@ export const config = {
     },
 
     agent: {
-        maxConcurrentAgents: parseInt(process.env.MAX_CONCURRENT_AGENTS || '3', 10),
+        maxConcurrentAgents: 3,
     },
 
     mysql: {

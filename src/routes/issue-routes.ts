@@ -174,12 +174,8 @@ router.post('/trigger', async (req: Request, res: Response) => {
             return;
         }
 
-        const userConfig = await getUserRuntimeConfig(req.user!.id);
+        const userConfig = await getUserRuntimeConfig(req.user!.id, req.user!.github_access_token, req.user!.github_login);
 
-        if (!userConfig.github.token) {
-            res.status(400).json({ error: 'GitHub token not configured. Please set it in Settings.' });
-            return;
-        }
         if (!userConfig.github.owner) {
             res.status(400).json({ error: 'GitHub owner not configured. Please set it in Settings.' });
             return;
@@ -202,7 +198,7 @@ router.post('/trigger', async (req: Request, res: Response) => {
         }
 
         const tracker = new IssueTracker(userId, existingIssueMap);
-        const agent = new SuperAgent(tracker.createCallbacks(), userConfig);
+        const agent = new SuperAgent(tracker.createCallbacks(), userConfig, req.user!.email);
 
         setImmediate(() => {
             log.info(`Fix triggered for ${userConfig.github.owner}/${repo} issue #${targetIssue} by ${userName}`);

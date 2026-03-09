@@ -23,6 +23,7 @@ export interface AnalysisResult {
 
 export interface ReviewResult {
     approved: boolean;
+    score: number;
     feedback: string;
     suggestions: string[];
 }
@@ -353,6 +354,7 @@ ${filesContext}`;
 Respond with a JSON object:
 {
   "approved": true/false,
+  "score": <number from 1-10>,
   "feedback": "Overall assessment of the changes",
   "suggestions": ["suggestion 1", "suggestion 2"]
 }
@@ -364,7 +366,13 @@ Review criteria:
 - Are there any edge cases not handled?
 - Is the change minimal and focused?
 
-Be pragmatic — approve if the fix is reasonable even if not perfect.`;
+Scoring guide:
+- 1-3: Fundamentally broken, does not address the issue or introduces serious bugs
+- 4-6: Partially addresses the issue but has significant problems that need rework
+- 7-8: Good fix, addresses the issue correctly with minor or no issues
+- 9-10: Excellent fix, clean, correct, and well-structured
+
+Be pragmatic — a score of 7+ means the fix is good enough to ship.`;
 
             const userPrompt = `## Issue: ${issueTitle}
 
@@ -387,6 +395,10 @@ ${diffsContext}`;
                 log.warn('AI review response missing approved field, defaulting to false');
                 parsed.approved = false;
             }
+            if (typeof parsed.score !== 'number' || parsed.score < 1 || parsed.score > 10) {
+                log.warn('AI review response missing or invalid score, defaulting based on approved');
+                parsed.score = parsed.approved ? 7 : 4;
+            }
             if (!parsed.feedback) {
                 parsed.feedback = 'No feedback provided';
             }
@@ -396,6 +408,7 @@ ${diffsContext}`;
 
             log.info('Review complete', {
                 approved: parsed.approved,
+                score: parsed.score,
                 feedbackPreview: parsed.feedback.substring(0, 100),
             });
 
