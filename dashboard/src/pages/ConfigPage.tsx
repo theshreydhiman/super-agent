@@ -12,19 +12,26 @@ const ConfigPage = () => {
     const [selectedBranch, setSelectedBranch] = useState('');
     const [loadingBranches, setLoadingBranches] = useState(false);
     const [errorBranches, setErrorBranches] = useState(null);
+    const [loadingRepo, setLoadingRepo] = useState(false);
 
     const fetchBranches = async () => {
         setLoadingBranches(true);
         setErrorBranches(null);
         try {
-            const response = await fetch(`/config/branches/${repo}`);
+            // Using apiFetch for consistency with the rest of the codebase
+            const response = await apiFetch(`/config/branches/${repo}`);
             if (!response.ok) {
                 throw new Error(response.statusText);
             }
             const data = await response.json();
             setBranches(data);
         } catch (error) {
-            setErrorBranches(error.message);
+            // More robust error handling
+            if (error instanceof Error) {
+                setErrorBranches(error.message);
+            } else {
+                setErrorBranches('An unknown error occurred');
+            }
         } finally {
             setLoadingBranches(false);
         }
@@ -38,6 +45,7 @@ const ConfigPage = () => {
 
     const handleRepoChange = (event) => {
         setRepo(event.target.value);
+        setLoadingRepo(true);
     };
 
     const handleBranchChange = (event) => {
@@ -48,6 +56,9 @@ const ConfigPage = () => {
         <div>
             <Field label="Repository" value={repo} onChange={handleRepoChange} placeholder="owner/repo">
                 <input type="text" value={repo} onChange={handleRepoChange} placeholder="owner/repo" />
+                {loadingRepo ? (
+                    <span>Loading...</span>
+                ) : null}
             </Field>
             <Field label="Dev Branch" value={selectedBranch} onChange={handleBranchChange} placeholder="main">
                 {loadingBranches ? (
