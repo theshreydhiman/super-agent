@@ -115,6 +115,26 @@ router.get('/repos', async (req: Request, res: Response) => {
     }
 });
 
+router.get('/branches', async (req: Request, res: Response) => {
+    try {
+        const repo = req.query.repo;
+        if (!repo) {
+            res.status(400).json({ error: 'Repository name is required' });
+            return;
+        }
+
+        const octokit = new Octokit({ auth: req.user!.github_access_token });
+        const { data: branches } = await octokit.repos.listBranches({
+            owner: req.user!.github_username,
+            repo: repo as string,
+        });
+
+        res.json(branches.map((b) => b.name));
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.post('/test', async (req: Request, res: Response) => {
     try {
         const results: Record<string, { success: boolean; message: string }> = {};

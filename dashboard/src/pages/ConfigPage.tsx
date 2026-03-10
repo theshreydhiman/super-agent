@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api/client';
+import { useFetch } from '../hooks/useFetch';
 
 interface Repo {
     name: string;
@@ -21,9 +22,11 @@ export default function ConfigPage() {
     const [saving, setSaving] = useState(false);
     const [testResults, setTestResults] = useState<Record<string, TestResult> | null>(null);
     const [message, setMessage] = useState('');
+    const [branches, setBranches] = useState<string[]>([]);
 
     // Form state (separate from saved config to track edits)
     const [form, setForm] = useState<Record<string, string>>({});
+    const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
 
     useEffect(() => {
         loadConfig();
@@ -99,6 +102,18 @@ export default function ConfigPage() {
         setForm((prev) => ({ ...prev, [key]: value }));
     };
 
+    const fetchBranches = async (repo: string) => {
+        try {
+            const { data } = await apiFetch<string[]>('/api/config/branches', {
+                method: 'GET',
+                params: { repo },
+            });
+            setBranches(data);
+        } catch (err: any) {
+            setMessage(`Error fetching branches: ${err.message}`);
+        }
+    };
+
     if (loading) return <div className="text-gray-500">Loading...</div>;
 
     const provider = form.ai_provider || 'gemini';
@@ -108,9 +123,7 @@ export default function ConfigPage() {
             <h2 className="text-2xl font-bold text-white mb-6">Settings</h2>
 
             {message && (
-                <div className={`mb-4 p-3 rounded-lg text-sm ${message.includes('Error') || message.includes('failed') ? 'bg-red-900/20 text-red-400 border border-red-800' : 'bg-green-900/20 text-green-400 border border-green-800'}`}>
-                    {message}
-                </div>
+                <div className={`mb-4 p-3 rounded-lg text-sm ${message.includes('Error') || message.includes('failed') ? 'bg-red-900/20 text-red-400 border border-red-800' : 'bg-green-900/20 text-green-400 border border-green-800'}`}>{message}</div>
             )}
 
             {/* GitHub Settings */}
@@ -121,8 +134,11 @@ export default function ConfigPage() {
                         <label className="block text-sm text-gray-400 mb-1">Target Repository</label>
                         {repos.length > 0 ? (
                             <select
-                                value={form.github_repo || ''}
-                                onChange={(e) => updateField('github_repo', e.target.value)}
+                                value={selectedRepo || ''}
+                                onChange={(e) => {
+                                    setSelectedRepo(e.target.value);
+                                    fetchBranches(e.target.value);
+                                }}
                                 className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
                             >
                                 <option value="">All repositories (multi-repo mode)</option>
@@ -134,7 +150,20 @@ export default function ConfigPage() {
                             <Field label="" value={form.github_repo || ''} onChange={(v) => updateField('github_repo', v)} placeholder="repo-name (empty for all repos)" noLabel />
                         )}
                     </div>
-                    <Field label="Dev Branch" value={form.dev_branch || 'main'} onChange={(v) => updateField('dev_branch', v)} placeholder="main" />
+                    {selectedRepo && (
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">Dev Branch</label>
+                            <select
+                                value={form.dev_branch || 'main'}
+                                onChange={(e) => updateField('dev_branch', e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
+                            >
+                                {branches.map((branch) => (
+                                    <option key={branch} value={branch}>{branch}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <Field label="Issue Label" value={form.issue_label || 'ai-agent'} onChange={(v) => updateField('issue_label', v)} placeholder="ai-agent" />
                     <Field label="Webhook Secret" value={form.webhook_secret || ''} onChange={(v) => updateField('webhook_secret', v)} placeholder="your-webhook-secret" type="password" />
                 </div>
@@ -189,7 +218,10 @@ export default function ConfigPage() {
             <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Agent Settings</h3>
                 <div className="space-y-4">
-                    <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={() => console.log("Max concurrent agents changed")} placeholder="3" disabled />
+                    <div>
+                        <label className="block text-sm text-gray-400 mb-1">Max Concurrent Agents</label>
+                        <Field label="Max Concurrent Agents" value={form.max_concurrent_agents || '3'} onChange={(v) => updateField('max_concurrent_agents', v)} placeholder="3" disabled />
+                    </div>
                 </div>
             </section>
 
@@ -197,9 +229,7 @@ export default function ConfigPage() {
             {testResults && (
                 <div className="mb-6 space-y-2">
                     {Object.entries(testResults).map(([key, result]) => (
-                        <div key={key} className={`p-3 rounded-lg text-sm border ${result.success ? 'bg-green-900/20 text-green-400 border-green-800' : 'bg-red-900/20 text-red-400 border-red-800'}`}>
-                            <span className="font-medium capitalize">{key}:</span> {result.message}
-                        </div>
+                        <div key={key} className={`p-3 rounded-lg text-sm border ${result.success ? 'bg-green-900/20 text-green-400 border-green-800' : 'bg-red-900/20 text-red-400 border-red-800'}`}>{key}: {result.message}</div>
                     ))}
                 </div>
             )}
