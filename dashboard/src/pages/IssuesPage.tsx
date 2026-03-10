@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { apiFetch } from '../api/client';
+import { PageHeader } from '../components/Layout';
 import StatusBadge from '../components/StatusBadge';
+import { Filter, Play, RotateCcw } from 'lucide-react';
 
 interface GitHubIssue {
     issue_number: number;
@@ -51,105 +53,123 @@ export default function IssuesPage() {
     };
 
     return (
-        <div>
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Issues</h2>
-                <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                    <option value="">All statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="working">Working</option>
-                    <option value="processing">Processing</option>
-                    <option value="success">Success</option>
-                    <option value="failed">Failed</option>
-                    <option value="pr_created">PR Created</option>
-                </select>
-            </div>
+        <div className="flex flex-col min-h-screen">
+            <PageHeader
+                title="Issues"
+                subtitle="GitHub issues labeled for AI processing"
+                actions={
+                    <div className="flex items-center gap-2">
+                        <Filter size={14} className="text-text-muted" />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2 text-sm font-mono focus:border-accent focus:outline-none transition-colors appearance-none cursor-pointer"
+                        >
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="working">Working</option>
+                            <option value="processing">Processing</option>
+                            <option value="success">Success</option>
+                            <option value="failed">Failed</option>
+                            <option value="pr_created">PR Created</option>
+                        </select>
+                    </div>
+                }
+            />
 
-            {message && (
-                <div className={`mb-4 p-3 rounded-lg text-sm ${message.includes('Failed') ? 'bg-red-900/20 text-red-400 border border-red-800' : 'bg-green-900/20 text-green-400 border border-green-800'}`}>
-                    {message}
-                </div>
-            )}
-
-            <div className="bg-gray-900 border border-gray-800 rounded-xl">
-                {error ? (
-                    <div className="p-8 text-center text-red-400">Failed to load issues: {error}</div>
-                ) : loading ? (
-                    <div className="p-8 text-center text-gray-500">Loading issues from GitHub...</div>
-                ) : filteredIssues.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">No issues found with the <code className="text-gray-400">ai-agent</code> label.</div>
-                ) : (
-                    <table className="w-full">
-                        <thead>
-                            <tr className="text-left text-xs text-gray-500 uppercase">
-                                <th className="px-4 py-3">Issue</th>
-                                <th className="px-4 py-3">Repository</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">PR</th>
-                                <th className="px-4 py-3">Date</th>
-                                <th className="px-4 py-3">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-800">
-                            {filteredIssues.map((issue) => {
-                                const key = `${issue.repo_name}-${issue.issue_number}`;
-                                const isFixing = fixingIssues.has(key);
-                                return (
-                                    <tr key={key} className="hover:bg-gray-800/50 transition-colors">
-                                        <td className="px-4 py-3">
-                                            <div>
-                                                <a href={issue.issue_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                                                    #{issue.issue_number}
-                                                </a>
-                                                <span className="text-gray-400 ml-2 text-sm">{issue.issue_title}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-gray-400">
-                                            {issue.repo_owner}/{issue.repo_name}
-                                        </td>
-                                        <td className="px-4 py-3" title={issue.status === 'failed' && issue.error_message ? issue.error_message : undefined}>
-                                            <StatusBadge status={issue.status} />
-                                        </td>
-                                        <td className="px-4 py-3 text-sm">
-                                            {issue.pr_url ? (
-                                                <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                                                    #{issue.pr_number}
-                                                </a>
-                                            ) : '—'}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-gray-500">
-                                            {new Date(issue.created_at).toLocaleString()}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            {issue.status === 'pending' && (
-                                                <button
-                                                    onClick={() => handleFix(issue)}
-                                                    disabled={isFixing}
-                                                    className="px-3 py-1 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                                >
-                                                    {isFixing ? 'Fixing...' : 'Fix'}
-                                                </button>
-                                            )}
-                                            {issue.status === 'failed' && (
-                                                <button
-                                                    onClick={() => handleFix(issue, true)}
-                                                    disabled={isFixing}
-                                                    className="px-3 py-1 text-xs font-medium rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 hover:text-red-300 border border-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                                >
-                                                    {isFixing ? 'Retrying...' : 'Retry'}
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+            <div className="flex-1 dot-grid p-7">
+                {message && (
+                    <div className={`mb-5 p-3 rounded-lg text-sm font-mono border ${
+                        message.includes('Failed')
+                            ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                            : 'bg-green-500/10 text-green-400 border-green-500/20'
+                    }`}>
+                        {message}
+                    </div>
                 )}
+
+                <div className="bg-surface border border-border rounded-xl overflow-hidden">
+                    {error ? (
+                        <div className="p-8 text-center text-red-400 font-mono text-sm">Failed to load issues: {error}</div>
+                    ) : loading ? (
+                        <div className="p-8 text-center text-text-muted font-mono text-sm">Loading issues from GitHub...</div>
+                    ) : filteredIssues.length === 0 ? (
+                        <div className="p-8 text-center text-text-muted text-sm">
+                            No issues found with the <code className="text-cyan-text bg-cyan-muted px-1.5 py-0.5 rounded font-mono text-xs">ai-agent</code> label.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Issue</th>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Repository</th>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Status</th>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">PR</th>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Date</th>
+                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredIssues.map((issue) => {
+                                        const key = `${issue.repo_name}-${issue.issue_number}`;
+                                        const isFixing = fixingIssues.has(key);
+                                        return (
+                                            <tr key={key} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                                                <td className="px-6 py-3.5 text-[13px]">
+                                                    <a href={issue.issue_url} target="_blank" rel="noopener noreferrer" className="text-text-primary hover:text-accent-text transition-colors font-medium">
+                                                        <span className="text-text-dim font-mono text-xs mr-2">#{issue.issue_number}</span>
+                                                        {issue.issue_title}
+                                                    </a>
+                                                </td>
+                                                <td className="px-6 py-3.5">
+                                                    <span className="text-xs text-text-muted font-mono">{issue.repo_owner}/{issue.repo_name}</span>
+                                                </td>
+                                                <td className="px-6 py-3.5" title={issue.status === 'failed' && issue.error_message ? issue.error_message : undefined}>
+                                                    <StatusBadge status={issue.status} />
+                                                </td>
+                                                <td className="px-6 py-3.5 text-sm">
+                                                    {issue.pr_url ? (
+                                                        <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-accent-text hover:text-accent-light font-mono text-xs transition-colors">
+                                                            #{issue.pr_number}
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-text-dim">&mdash;</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-3.5 text-xs text-text-dim font-mono">
+                                                    {new Date(issue.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-6 py-3.5">
+                                                    {issue.status === 'pending' && (
+                                                        <button
+                                                            onClick={() => handleFix(issue)}
+                                                            disabled={isFixing}
+                                                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:glow-accent flex items-center gap-1.5 font-mono"
+                                                        >
+                                                            <Play size={12} />
+                                                            {isFixing ? 'FIXING...' : 'FIX'}
+                                                        </button>
+                                                    )}
+                                                    {issue.status === 'failed' && (
+                                                        <button
+                                                            onClick={() => handleFix(issue, true)}
+                                                            disabled={isFixing}
+                                                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 font-mono"
+                                                        >
+                                                            <RotateCcw size={12} />
+                                                            {isFixing ? 'RETRYING...' : 'RETRY'}
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
