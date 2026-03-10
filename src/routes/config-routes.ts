@@ -1,3 +1,4 @@
+
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth-middleware';
 import { ConfigRepository } from '../repositories/config-repository';
@@ -114,6 +115,25 @@ router.get('/repos', async (req: Request, res: Response) => {
                 private: r.private,
                 language: r.language,
                 updated_at: r.updated_at,
+            }))
+        );
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/branches/:repoName', async (req: Request, res: Response) => {
+    try {
+        const repoName = req.params.repoName;
+        const octokit = new Octokit({ auth: req.user!.github_access_token });
+        const { data: branches } = await octokit.repos.listBranches({
+            owner: req.user!.github_owner,
+            repo: repoName,
+        });
+
+        res.json(
+            branches.data.map((b) => ({
+                name: b.name,
             }))
         );
     } catch (error: any) {
