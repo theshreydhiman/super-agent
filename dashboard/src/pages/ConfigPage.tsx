@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api/client';
 
@@ -14,9 +15,14 @@ interface TestResult {
     message: string;
 }
 
+interface Branch {
+    name: string;
+}
+
 export default function ConfigPage() {
     const [configs, setConfigs] = useState<Record<string, string>>({});
     const [repos, setRepos] = useState<Repo[]>([]);
+    const [branches, setBranches] = useState<Branch[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testResults, setTestResults] = useState<Record<string, TestResult> | null>(null);
@@ -28,6 +34,7 @@ export default function ConfigPage() {
     useEffect(() => {
         loadConfig();
         loadRepos();
+        loadBranches();
     }, []);
 
     const loadConfig = async () => {
@@ -46,6 +53,15 @@ export default function ConfigPage() {
         try {
             const data = await apiFetch<Repo[]>('/api/config/repos');
             setRepos(data);
+        } catch {
+            // May fail if token doesn't have repo access
+        }
+    };
+
+    const loadBranches = async () => {
+        try {
+            const data = await apiFetch<Branch[]>('/api/config/branches');
+            setBranches(data);
         } catch {
             // May fail if token doesn't have repo access
         }
@@ -136,7 +152,22 @@ export default function ConfigPage() {
                             <Field label="" value={form.github_repo || ''} onChange={(v) => updateField('github_repo', v)} placeholder="repo-name (empty for all repos)" noLabel />
                         )}
                     </div>
-                    <Field label="Dev Branch" value={form.dev_branch || 'main'} onChange={(v) => updateField('dev_branch', v)} placeholder="main" />
+                    <div>
+                        <label className="block text-sm text-gray-400 mb-1">Dev Branch</label>
+                        {branches.length > 0 ? (
+                            <select
+                                value={form.dev_branch || ''}
+                                onChange={(e) => updateField('dev_branch', e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm"
+                            >
+                                {branches.map((b) => (
+                                    <option key={b.name} value={b.name}>{b.name}</option>
+                                ))}
+                            </select>
+                        ) : (
+                            <Field label="" value={form.dev_branch || ''} onChange={(v) => updateField('dev_branch', v)} placeholder="main" noLabel />
+                        )}
+                    </div>
                     <Field label="Issue Label" value={form.issue_label || 'ai-agent'} onChange={(v) => updateField('issue_label', v)} placeholder="ai-agent" />
                     <Field label="Webhook Secret" value={form.webhook_secret || ''} onChange={(v) => updateField('webhook_secret', v)} placeholder="your-webhook-secret" type="password" />
                 </div>
