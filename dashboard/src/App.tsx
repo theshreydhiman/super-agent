@@ -53,6 +53,8 @@ function App() {
             <BrowserRouter>
                 <Routes>
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/guide" element={<Layout><GuidePage /></Layout>} />
+                    <Route path="/about" element={<Layout><AboutPage /></Layout>} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </BrowserRouter>

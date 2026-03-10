@@ -4,11 +4,11 @@ import type { User } from '../hooks/useAuth';
 
 interface LayoutProps {
     children: React.ReactNode;
-    user: User;
-    onLogout: () => void;
+    user?: User | null;
+    onLogout?: () => void;
 }
 
-const navSections = [
+const authenticatedNavSections = [
     {
         label: 'Navigate',
         items: [
@@ -26,8 +26,19 @@ const navSections = [
     },
 ];
 
+const publicNavSections = [
+    {
+        label: 'Explore',
+        items: [
+            { path: '/guide', label: '/guide', icon: BookOpen },
+            { path: '/about', label: '/about', icon: Info },
+        ],
+    },
+];
+
 export default function Layout({ children, user, onLogout }: LayoutProps) {
     const location = useLocation();
+    const navSections = user ? authenticatedNavSections : publicNavSections;
 
     return (
         <div className="min-h-screen bg-base text-text-primary flex">
@@ -78,34 +89,45 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 </nav>
 
                 {/* User */}
-                <div className="px-4 py-4 border-t border-border">
-                    <div className="flex items-center gap-3 px-2 py-2 rounded-[10px] hover:bg-white/[0.04] transition-colors">
-                        {user.github_avatar_url ? (
-                            <img
-                                src={user.github_avatar_url}
-                                alt={user.github_login}
-                                className="w-[34px] h-[34px] rounded-full"
-                            />
-                        ) : (
-                            <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-accent to-pink-500 flex items-center justify-center text-sm font-semibold text-white">
-                                {user.github_login?.substring(0, 2).toUpperCase()}
+                {user ? (
+                    <div className="px-4 py-4 border-t border-border">
+                        <div className="flex items-center gap-3 px-2 py-2 rounded-[10px] hover:bg-white/[0.04] transition-colors">
+                            {user.github_avatar_url ? (
+                                <img
+                                    src={user.github_avatar_url}
+                                    alt={user.github_login}
+                                    className="w-[34px] h-[34px] rounded-full"
+                                />
+                            ) : (
+                                <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-accent to-pink-500 flex items-center justify-center text-sm font-semibold text-white">
+                                    {user.github_login?.substring(0, 2).toUpperCase()}
+                                </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[13px] font-semibold text-text-primary truncate">
+                                    {user.github_login}
+                                </div>
+                                <div className="text-[11px] text-text-dim">Admin</div>
                             </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold text-text-primary truncate">
-                                {user.github_login}
-                            </div>
-                            <div className="text-[11px] text-text-dim">Admin</div>
+                            <button
+                                onClick={onLogout}
+                                className="text-text-dim hover:text-red-400 transition-colors"
+                                title="Logout"
+                            >
+                                <LogOut size={16} />
+                            </button>
                         </div>
-                        <button
-                            onClick={onLogout}
-                            className="text-text-dim hover:text-red-400 transition-colors"
-                            title="Logout"
-                        >
-                            <LogOut size={16} />
-                        </button>
                     </div>
-                </div>
+                ) : (
+                    <div className="px-4 py-4 border-t border-border">
+                        <Link
+                            to="/login"
+                            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-[10px] text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-all"
+                        >
+                            Sign in with GitHub
+                        </Link>
+                    </div>
+                )}
             </aside>
 
             {/* Main content */}
