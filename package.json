@@ -4,6 +4,7 @@
   "description": "AI-powered multi-agent system for automated GitHub issue resolution",
   "main": "dist/index.js",
   "scripts": {
+    "dev:install": "npm install && cd dashboard && npm install",
     "build": "tsc",
     "build:dashboard": "cd dashboard && npm run build",
     "build:all": "npm run build && npm run build:dashboard",

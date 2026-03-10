@@ -24,6 +24,8 @@ export class WebhookServer {
 
         // Health check — verify DB connectivity
         this.app.get('/health', async (_req, res) => {
+            console.log("Health checked");
+            
             const health: { status: string; service: string; timestamp: string; database?: string } = {
                 status: 'ok',
                 service: 'Super Agent',

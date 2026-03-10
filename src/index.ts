@@ -4,6 +4,7 @@ import { WebhookServer } from './triggers/webhook-server';
 import { createApp } from './server';
 import { runMigrations } from './db/migrate';
 import { createLogger } from './utils/logger';
+import { startApiPoller, type SchedulerInstance } from './utils/scheduler';
 
 const log = createLogger('Main');
 
@@ -55,9 +56,21 @@ async function main(): Promise<void> {
         log.info(`   API:       http://localhost:${port}/api`);
     });
 
+    // Track active schedulers for cleanup on shutdown
+    const activeSchedulers: SchedulerInstance[] = [];
+
+    // TODO: Configure your API endpoint below
+    // Example: startApiPoller('http://localhost:3000/api/your-endpoint', 14)
+    const apiScheduler = startApiPoller('http://localhost:3001/health', 14);
+    activeSchedulers.push(apiScheduler);
+
     // Graceful shutdown
     const shutdown = (signal: string) => {
         log.info(`${signal} received. Shutting down gracefully...`);
+
+        // Stop all active schedulers
+        activeSchedulers.forEach((scheduler) => scheduler.stop());
+
         server.close(() => {
             log.info('HTTP server closed');
             process.exit(0);
