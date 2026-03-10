@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Bug, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Bug, Settings, LogOut, BookOpen, Info } from 'lucide-react';
 import type { User } from '../hooks/useAuth';
 
 interface LayoutProps {
@@ -20,6 +20,8 @@ const navSections = [
         label: 'System',
         items: [
             { path: '/config', label: '/settings', icon: Settings },
+            { path: '/guide', label: '/guide', icon: BookOpen },
+            { path: '/about', label: '/about', icon: Info },
         ],
     },
 ];
