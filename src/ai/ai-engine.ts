@@ -287,7 +287,15 @@ Rules:
 - Maintain existing code style and conventions
 - Add comments where appropriate to explain non-obvious changes
 - Make sure the code compiles and is correct
-- If you need to create a new file, use originalContent: null`;
+- If you need to create a new file, use originalContent: null
+
+CRITICAL — Preserving existing code:
+- You MUST preserve ALL existing functionality. Do NOT delete, remove, or replace code that is unrelated to the issue. Your job is to ADD or MODIFY only what is needed.
+- NEVER use placeholder comments like "// ..." or "// rest of code" — you must include the COMPLETE file content including all unchanged code.
+- If the original file has 200 lines and your fix only needs to change 5 lines, your output MUST still have ~200 lines with those 5 lines changed.
+- Do NOT rewrite or restructure files. Make the smallest surgical change possible.
+- NEVER delete existing functions, components, routes, exports, interfaces, or types unless the issue explicitly asks for their removal.
+- If a file is too large to return in full, do NOT truncate it — instead, leave it unchanged and explain why in your response.`;
 
             const userPrompt = `## Issue: ${issueTitle}
 
@@ -326,6 +334,19 @@ ${filesContext}`;
                 throw new Error('AI generated no valid file changes (missing filePath or newContent)');
             }
 
+            // Warn if generated content is significantly shorter than original (possible truncation/regression)
+            for (const change of changes) {
+                if (change.originalContent && change.newContent.length < change.originalContent.length * 0.5) {
+                    log.warn(
+                        `Generated content for "${change.filePath}" is ${Math.round((1 - change.newContent.length / change.originalContent.length) * 100)}% shorter than original — possible truncation or regression`,
+                        {
+                            originalLength: change.originalContent.length,
+                            newLength: change.newContent.length,
+                        }
+                    );
+                }
+            }
+
             log.info(`Generated ${changes.length} file changes`);
             return changes;
         }, 'generateFix');
@@ -349,7 +370,7 @@ ${filesContext}`;
                 )
                 .join('\n\n');
 
-            const systemPrompt = `You are a senior code reviewer. Review the following code changes made to fix a GitHub issue.
+            const systemPrompt = `You are a strict senior code reviewer. Review the following code changes made to fix a GitHub issue.
 
 Respond with a JSON object:
 {
@@ -365,14 +386,21 @@ Review criteria:
 - Does it maintain existing conventions?
 - Are there any edge cases not handled?
 - Is the change minimal and focused?
+- REGRESSION CHECK: Does the change delete or break existing functionality that is unrelated to the issue? Removing working code that was not part of the bug is a critical failure.
+- COMPILATION CHECK: Does the resulting code actually compile? Look for syntax errors, missing imports, incomplete code (e.g., "// ..." placeholders), variables outside function scope, and missing exports.
+- SCOPE CHECK: Is the change scoped only to what is needed? A fix that rewrites entire files when only a few lines needed changing is a red flag.
+- DELETION CHECK: If the change deletes significantly more code than it adds, and the issue did not ask for removal, this is very likely a regression.
 
 Scoring guide:
-- 1-3: Fundamentally broken, does not address the issue or introduces serious bugs
-- 4-6: Partially addresses the issue but has significant problems that need rework
-- 7-8: Good fix, addresses the issue correctly with minor or no issues
-- 9-10: Excellent fix, clean, correct, and well-structured
+- 1-3: Fundamentally broken, introduces regressions, deletes unrelated working code, does not compile, or does not address the issue
+- 4-6: Partially addresses the issue but has significant problems — overbroad changes, missing functionality, scope creep, or partial regressions
+- 7-8: Good fix, minimal and surgical, addresses the issue correctly with minor or no issues
+- 9-10: Excellent fix, clean, correct, well-structured, and precisely scoped
 
-Be pragmatic — a score of 7+ means the fix is good enough to ship.`;
+HARD RULES:
+- A change that deletes large amounts of working code unrelated to the issue MUST score 3 or below, regardless of whether it adds the requested feature.
+- Code containing placeholder comments like "// ..." instead of actual implementation MUST score 2 or below.
+- If the diff shows an entire file was rewritten when only a small addition was needed, score 4 or below.`;
 
             const userPrompt = `## Issue: ${issueTitle}
 
