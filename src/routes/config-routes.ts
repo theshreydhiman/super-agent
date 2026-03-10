@@ -1,3 +1,4 @@
+
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth-middleware';
 import { ConfigRepository } from '../repositories/config-repository';
@@ -20,4 +21,13 @@ router.get('/config/branches/:repo', async (req: Request, res: Response) => {
     }
 });
 
-// ...
+// Rest of the routes...
+router.get('/config', requireAuth, async (req: Request, res: Response) => {
+    // Existing route implementation...
+});
+
+router.post('/config', requireAuth, async (req: Request, res: Response) => {
+    // Existing route implementation...
+});
+
+// Other routes...
