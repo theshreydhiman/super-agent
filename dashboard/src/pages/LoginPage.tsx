@@ -25,8 +25,15 @@ export default function LoginPage() {
                     Sign in with GitHub
                 </a>
 
+                {/* Links */}
+                <div className="mt-6 flex items-center justify-center gap-4 text-sm">
+                    <a href="/guide" className="text-text-secondary hover:text-accent-light transition-colors">Getting Started</a>
+                    <span className="text-text-dim">&middot;</span>
+                    <a href="/about" className="text-text-secondary hover:text-accent-light transition-colors">About</a>
+                </div>
+
                 {/* Footer */}
-                <div className="mt-8 pt-6 border-t border-border">
+                <div className="mt-6 pt-6 border-t border-border">
                     <p className="text-[11px] text-text-dim font-mono">
                         v1.0 &middot; Secure OAuth 2.0 Authentication
                     </p>

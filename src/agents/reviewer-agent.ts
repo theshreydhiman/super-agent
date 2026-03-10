@@ -123,10 +123,21 @@ export class ReviewerAgent {
                 return { pr: null, failure: null };
             }
 
-            // Step 2: Review with AI (includes score)
+            // Step 2: Analyze diffs for suspicious patterns before AI review
+            const diffWarnings = this.analyzeDiffs(diffs);
+            if (diffWarnings.length > 0) {
+                log.warn(`Diff analysis warnings for issue #${currentResult.issueNumber}:`, { warnings: diffWarnings });
+            }
+
+            // Append diff warnings to issue context so the reviewer is aware
+            const issueBodyWithWarnings = diffWarnings.length > 0
+                ? `${currentResult.issueBody || 'No description provided.'}\n\n---\n⚠️ DIFF ANALYSIS WARNINGS (review carefully):\n${diffWarnings.join('\n')}`
+                : currentResult.issueBody;
+
+            // Step 3: Review with AI (includes score)
             const review = await this.ai.reviewChanges(
                 currentResult.issueTitle,
-                currentResult.issueBody,
+                issueBodyWithWarnings,
                 diffs
             );
 
@@ -283,6 +294,39 @@ export class ReviewerAgent {
         result.changes = changes;
 
         log.info(`Rework committed to branch "${result.branchName}" for issue #${result.issueNumber}`);
+    }
+
+    private analyzeDiffs(diffs: { filename: string; patch: string; status: string }[]): string[] {
+        const warnings: string[] = [];
+
+        for (const diff of diffs) {
+            const lines = diff.patch?.split('\n') || [];
+            let additions = 0;
+            let deletions = 0;
+
+            for (const line of lines) {
+                if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+                if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+            }
+
+            if (deletions > 0 && deletions > additions * 2) {
+                warnings.push(
+                    `- File "${diff.filename}": ${deletions} lines deleted vs ${additions} lines added. This file lost significantly more code than it gained — verify no existing functionality was removed.`
+                );
+            }
+
+            // Check for placeholder comments in additions
+            for (const line of lines) {
+                if (line.startsWith('+') && /\/\/\s*\.\.\./.test(line)) {
+                    warnings.push(
+                        `- File "${diff.filename}": Contains placeholder comment "// ..." — this likely means code was truncated instead of preserved.`
+                    );
+                    break;
+                }
+            }
+        }
+
+        return warnings;
     }
 
     private async createPR(
