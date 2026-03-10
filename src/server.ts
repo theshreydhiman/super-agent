@@ -1,3 +1,4 @@
+
 import express from 'express';
 import session from 'express-session';
 import cors from 'cors';
@@ -6,7 +7,7 @@ import { config } from './config';
 import authRoutes from './routes/auth-routes';
 import dashboardRoutes from './routes/dashboard-routes';
 import issueRoutes from './routes/issue-routes';
-import configRoutes from './routes/config-routes';
+import { configRoutes } from './routes/config-routes'; // Modified this line to use named import
 import { errorHandler } from './middleware/error-handler';
 import { createLogger } from './utils/logger';
 
