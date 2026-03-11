@@ -1,4 +1,5 @@
 import { useFetch } from '../hooks/useFetch';
+import { useSocketRefetch } from '../hooks/useSocket';
 import { PageHeader, IconButton } from '../components/Layout';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
@@ -56,8 +57,12 @@ function getStatusText(issue: RecentIssue) {
 }
 
 export default function DashboardPage() {
-    const { data: stats, loading: statsLoading, error: statsError } = useFetch<Stats>('/api/dashboard/stats');
-    const { data: recentIssues, loading: issuesLoading, error: issuesError } = useFetch<RecentIssue[]>('/api/dashboard/recent');
+    const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useFetch<Stats>('/api/dashboard/stats');
+    const { data: recentIssues, loading: issuesLoading, error: issuesError, refetch: refetchRecent } = useFetch<RecentIssue[]>('/api/dashboard/recent');
+
+    // Real-time updates via Socket.IO
+    useSocketRefetch('stats:update', refetchStats);
+    useSocketRefetch('issue:update', refetchRecent);
 
     const successRate = stats && stats.totalIssues > 0
         ? Math.round((stats.successCount / stats.totalIssues) * 100)

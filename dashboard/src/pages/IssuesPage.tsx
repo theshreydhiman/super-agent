@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
+import { useSocketRefetch } from '../hooks/useSocket';
 import { apiFetch } from '../api/client';
 import { PageHeader } from '../components/Layout';
 import StatusBadge from '../components/StatusBadge';
@@ -27,6 +28,9 @@ export default function IssuesPage() {
 
     const { data, loading, error, refetch } = useFetch<{ issues: GitHubIssue[]; total: number }>('/api/issues');
 
+    // Real-time updates via Socket.IO
+    useSocketRefetch('issue:update', refetch);
+
     const filteredIssues = data?.issues.filter(
         (issue) => !statusFilter || issue.status === statusFilter
     ) ?? [];
@@ -40,7 +44,6 @@ export default function IssuesPage() {
                 body: JSON.stringify({ repo: issue.repo_name, rerun, issueNumber: issue.issue_number }),
             });
             setMessage(`Triggered ${rerun ? 'retry' : 'fix'} for #${issue.issue_number}`);
-            setTimeout(() => refetch(), 2000);
         } catch (err: any) {
             setMessage(`Failed to trigger fix: ${err.message}`);
         } finally {
