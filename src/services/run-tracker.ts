@@ -2,6 +2,7 @@ import { IssueRepository } from '../repositories/issue-repository';
 import { WorkerResult } from '../agents/worker-agent';
 import { ReviewedPR } from '../agents/reviewer-agent';
 import { createLogger } from '../utils/logger';
+import { emitIssueUpdate, emitStatsUpdate } from '../socket';
 
 const log = createLogger('IssueTracker');
 
@@ -22,6 +23,15 @@ export class IssueTracker {
         this.existingIssueMap = existingIssueMap;
     }
 
+    private async broadcastStats(): Promise<void> {
+        try {
+            const stats = await this.issueRepo.getStats(this.userId);
+            emitStatsUpdate(stats);
+        } catch {
+            // Non-critical — don't break the pipeline if stats emit fails
+        }
+    }
+
     createCallbacks(): AgentCallbacks {
         return {
             onIssueStart: async (issueNumber: number, issueTitle: string, repoOwner: string, repoName: string): Promise<number> => {
@@ -29,6 +39,8 @@ export class IssueTracker {
                 if (existingId) {
                     await this.issueRepo.resetIssue(existingId);
                     log.info(`Reset issue #${issueNumber} (DB id: ${existingId}) for retry`);
+                    emitIssueUpdate({ issueNumber, repo: `${repoOwner}/${repoName}`, status: 'processing', title: issueTitle });
+                    await this.broadcastStats();
                     return existingId;
                 }
 
@@ -41,6 +53,8 @@ export class IssueTracker {
                     issue_url: `https://github.com/${repoOwner}/${repoName}/issues/${issueNumber}`,
                 });
                 log.info(`Tracking issue #${issueNumber} (DB id: ${issueId})`);
+                emitIssueUpdate({ issueNumber, repo: `${repoOwner}/${repoName}`, status: 'processing', title: issueTitle });
+                await this.broadcastStats();
                 return issueId;
             },
 
@@ -51,6 +65,18 @@ export class IssueTracker {
                     error_message: result.error || null,
                 });
                 log.info(`Issue DB id ${issueDbId} ${result.success ? 'succeeded' : 'failed'}`);
+
+                const issue = await this.issueRepo.findById(issueDbId);
+                if (issue) {
+                    emitIssueUpdate({
+                        issueNumber: issue.issue_number,
+                        repo: `${issue.repo_owner}/${issue.repo_name}`,
+                        status: result.success ? 'success' : 'failed',
+                        branchName: result.branchName || null,
+                        error: result.error || null,
+                    });
+                }
+                await this.broadcastStats();
             },
 
             onPRCreated: async (issueDbId: number, pr: ReviewedPR): Promise<void> => {
@@ -62,6 +88,18 @@ export class IssueTracker {
                     review_score: pr.reviewScore,
                 });
                 log.info(`PR #${pr.prNumber} recorded for issue DB id ${issueDbId}`);
+
+                const issue = await this.issueRepo.findById(issueDbId);
+                if (issue) {
+                    emitIssueUpdate({
+                        issueNumber: issue.issue_number,
+                        repo: `${issue.repo_owner}/${issue.repo_name}`,
+                        status: 'success',
+                        prNumber: pr.prNumber,
+                        prUrl: pr.prUrl,
+                    });
+                }
+                await this.broadcastStats();
             },
         };
     }

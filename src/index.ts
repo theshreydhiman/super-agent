@@ -1,3 +1,4 @@
+import http from 'http';
 import { config } from './config';
 import { SuperAgent } from './agents/super-agent';
 import { WebhookServer } from './triggers/webhook-server';
@@ -5,6 +6,7 @@ import { createApp } from './server';
 import { runMigrations } from './db/migrate';
 import { createLogger } from './utils/logger';
 import { startApiPoller, type SchedulerInstance } from './utils/scheduler';
+import { initSocket } from './socket';
 
 const log = createLogger('Main');
 
@@ -46,14 +48,18 @@ async function main(): Promise<void> {
     // Setup webhook and health routes on the shared app
     new WebhookServer(app, superAgent);
 
-    // Start the unified server
+    // Start the unified server with Socket.IO
     const port = config.triggers.webhookPort;
-    const server = app.listen(port, () => {
+    const server = http.createServer(app);
+    initSocket(server);
+
+    server.listen(port, () => {
         log.info(`Server listening on port ${port}`);
         log.info(`   Dashboard: http://localhost:${port}`);
         log.info(`   Health:    http://localhost:${port}/health`);
         log.info(`   Webhook:   http://localhost:${port}/webhook`);
         log.info(`   API:       http://localhost:${port}/api`);
+        log.info(`   Socket.IO: ws://localhost:${port}`);
     });
 
     // Track active schedulers for cleanup on shutdown

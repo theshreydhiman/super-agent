@@ -4,8 +4,12 @@ import { config } from '../config';
 import { SuperAgent } from '../agents/super-agent';
 import { getPool } from '../db/connection';
 import { createLogger } from '../utils/logger';
+import { UserRepository } from '../repositories/user-repository';
+import { ConfigRepository } from '../repositories/config-repository';
 
 const log = createLogger('WebhookServer');
+const userRepo = new UserRepository();
+const configRepo = new ConfigRepository();
 
 export class WebhookServer {
     private app: express.Application;
@@ -59,15 +63,31 @@ export class WebhookServer {
                     return;
                 }
 
+                // Fetch webhook secret from database
+                let webhookSecret = config.github.webhookSecret;
+                try {
+                    const userId = await userRepo.findByGithubId(payload.sender?.id)?.then(u => u?.id);
+                    if (userId) {
+                        const dbSecret = await configRepo.get(userId, 'webhook_secret');
+                        if (dbSecret) {
+                            webhookSecret = dbSecret;
+                        }
+                    } else {
+                        log.warn('Webhook sender not found in database', { githubId: payload.sender?.id });
+                    }
+                } catch (err) {
+                    log.warn('Failed to fetch webhook secret from database', { error: (err as any).message });
+                }
+
                 // Verify webhook signature
-                if (config.github.webhookSecret) {
+                if (webhookSecret) {
                     const signature = req.headers['x-hub-signature-256'] as string;
 
                     log.info('Webhook signature verification', {
                         hasSignatureHeader: !!signature,
                         signaturePrefix: signature ? signature.substring(0, 20) + '...' : 'none',
                         rawBodyLength: rawBody.length,
-                        configuredSecretLength: config.github.webhookSecret.length,
+                        configuredSecretLength: webhookSecret.length,
                     });
 
                     if (!signature) {
@@ -76,9 +96,9 @@ export class WebhookServer {
                         return;
                     }
 
-                    if (!this.verifySignature(rawBody, signature)) {
+                    if (!this.verifySignature(rawBody, signature, webhookSecret)) {
                         const expected = `sha256=${crypto
-                            .createHmac('sha256', config.github.webhookSecret)
+                            .createHmac('sha256', webhookSecret)
                             .update(rawBody)
                             .digest('hex')}`;
                         log.warn('Webhook signature mismatch', {
@@ -163,11 +183,11 @@ export class WebhookServer {
         }
     }
 
-    private verifySignature(payload: Buffer, signature: string): boolean {
+    private verifySignature(payload: Buffer, signature: string, webhookSecret: string): boolean {
         if (!signature || !payload) return false;
 
         const expected = `sha256=${crypto
-            .createHmac('sha256', config.github.webhookSecret)
+            .createHmac('sha256', webhookSecret)
             .update(payload)
             .digest('hex')}`;
 

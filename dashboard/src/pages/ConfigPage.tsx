@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api/client';
 import { PageHeader } from '../components/Layout';
-import { Save, Zap, Github, Cpu, Settings2, CheckCircle, XCircle } from 'lucide-react';
+import { Save, Zap, Github, Cpu, Settings2, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react';
 import { useFetchBranches } from '../hooks/useFetch';
 
 interface Repo {
@@ -296,21 +296,35 @@ function Field({ label, value, onChange, placeholder, type = 'text', disabled = 
     type?: string;
     disabled?: boolean;
 }) {
+    const [visible, setVisible] = useState(false);
+    const isPassword = type === 'password';
+
     return (
         <div>
             {label && (
                 <label className="block text-[12px] text-text-muted mb-1.5 font-mono uppercase tracking-wide">{label}</label>
             )}
-            <input
-                type={type}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-                disabled={disabled}
-                className={`w-full bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2.5 text-sm font-mono focus:border-accent focus:outline-none transition-colors placeholder:text-text-dim ${
-                    disabled ? 'opacity-40 cursor-not-allowed' : ''
-                }`}
-            />
+            <div className="relative">
+                <input
+                    type={isPassword && visible ? 'text' : type}
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    className={`w-full bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2.5 text-sm font-mono focus:border-accent focus:outline-none transition-colors placeholder:text-text-dim ${
+                        disabled ? 'opacity-40 cursor-not-allowed' : ''
+                    } ${isPassword ? 'pr-10' : ''}`}
+                />
+                {isPassword && value && (
+                    <button
+                        type="button"
+                        onClick={() => setVisible((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                    >
+                        {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
