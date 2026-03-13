@@ -48,11 +48,12 @@ Super Agent watches your GitHub repositories for issues tagged with a configurab
 - **Multi-Provider AI** — Choose between Gemini, OpenAI, Claude, or Groq per user
 - **Per-User Config** — API keys, repo settings, and preferences stored encrypted in MySQL
 - **Single-Issue Targeting** — Fix or retry individual issues from the dashboard
-- **Webhook Support** — Auto-trigger on GitHub issue events
+- **Webhook Support** — Auto-trigger on GitHub issue events with per-user authentication
 - **Encrypted Secrets** — All API keys and tokens encrypted with AES-256-GCM
 - **Concurrent Workers** — Process multiple issues in parallel with configurable limits
 - **AI Code Review** — Reviewer agent validates fixes before creating PRs
 - **Email Notifications** — Get notified when PRs are created (via EmailJS)
+- **Real-Time Updates** — Socket.IO pushes live issue/stats updates to the dashboard
 
 ---
 
@@ -104,19 +105,9 @@ SESSION_SECRET=<random-secret-string>  # Generate: node -e "console.log(require(
 WEBHOOK_PORT=3001
 DASHBOARD_URL=http://localhost:3001
 
-# ─── Default AI Provider (users can override in dashboard settings) ───
-AI_PROVIDER=gemini                     # gemini | openai | claude | groq
-GEMINI_API_KEY=your_key                # Only needed for webhook-triggered runs without user context
-
 # ─── Webhook (optional) ───
 WEBHOOK_SECRET=your_webhook_secret
 WEBHOOK_MODE=true
-
-# ─── GitHub defaults (optional, users configure their own in dashboard) ───
-GITHUB_TOKEN=ghp_your_token
-GITHUB_OWNER=your-username
-ISSUE_LABEL=ai-agent
-DEV_BRANCH=main
 ```
 
 ### 3. Create the MySQL database
@@ -187,6 +178,7 @@ super-agent/
 │   ├── index.ts                 # Entry point & server bootstrap
 │   ├── config.ts                # Environment config defaults
 │   ├── server.ts                # Express app factory (session, routes, SPA)
+│   ├── socket.ts                # Socket.IO setup for real-time updates
 │   ├── agents/
 │   │   ├── super-agent.ts       # Orchestrator — manages the full pipeline
 │   │   ├── worker-agent.ts      # Analyzes issues & generates code fixes
@@ -197,30 +189,31 @@ super-agent/
 │   │   └── github-client.ts     # GitHub API wrapper (Octokit)
 │   ├── db/
 │   │   ├── connection.ts        # MySQL pool
-│   │   └── migrate.ts           # Auto-migrations
+│   │   ├── migrate.ts           # Auto-migrations
+│   │   └── schema.sql           # Database schema
 │   ├── middleware/
 │   │   ├── auth-middleware.ts    # Session-based auth guard
 │   │   └── error-handler.ts     # Global error handler
 │   ├── repositories/
-│   │   ├── run-repository.ts    # Runs & processed issues data access
+│   │   ├── issue-repository.ts  # Processed issues data access
 │   │   ├── config-repository.ts # Per-user config (encrypted)
 │   │   └── user-repository.ts   # User accounts
 │   ├── routes/
 │   │   ├── auth-routes.ts       # GitHub OAuth flow
-│   │   ├── run-routes.ts        # Runs API + trigger endpoint
-│   │   ├── issue-routes.ts      # Issues listing from GitHub
-│   │   ├── config-routes.ts     # User settings CRUD
+│   │   ├── issue-routes.ts      # Issues listing & fix trigger endpoint
+│   │   ├── config-routes.ts     # User settings CRUD & connectivity tests
 │   │   └── dashboard-routes.ts  # Stats & recent activity
 │   ├── services/
 │   │   ├── user-config.ts       # Per-user runtime config (DB -> .env -> defaults)
-│   │   ├── run-tracker.ts       # DB callbacks for run/issue tracking
+│   │   ├── run-tracker.ts       # DB callbacks for issue/PR tracking
 │   │   ├── email-service.ts     # Email notifications (EmailJS)
 │   │   └── encryption.ts        # AES-256-GCM encryption for secrets
 │   ├── triggers/
-│   │   └── webhook-server.ts    # GitHub webhook handler
+│   │   └── webhook-server.ts    # GitHub webhook handler (per-user auth)
 │   └── utils/
 │       ├── logger.ts            # Structured colored logger
-│       └── retry.ts             # Exponential backoff with jitter
+│       ├── retry.ts             # Exponential backoff with jitter
+│       └── scheduler.ts         # API polling scheduler
 ├── dashboard/                   # React + Vite + Tailwind frontend
 │   ├── src/
 │   │   ├── pages/               # Dashboard, Runs, Issues, Config, RunDetail
@@ -262,8 +255,10 @@ For auto-triggering when issues are created or labeled:
 1. Go to your repo > **Settings** > **Webhooks** > **Add webhook**
 2. **Payload URL:** `https://<your-server>/webhook`
 3. **Content type:** `application/json`
-4. **Secret:** Same value as `WEBHOOK_SECRET` in your `.env`
+4. **Secret:** Same value as `WEBHOOK_SECRET` in your `.env` (or configured per-user in dashboard settings)
 5. **Events:** Select **Issues**
+
+> **Note:** The webhook handler identifies the sender from the GitHub payload and loads their stored OAuth token and config from the database. The sender must have logged into the dashboard at least once for webhook-triggered runs to work.
 
 ---
 
@@ -280,6 +275,7 @@ For auto-triggering when issues are created or labeled:
 | **Google Generative AI** | Gemini AI provider |
 | **OpenAI SDK** | OpenAI/Groq AI provider |
 | **Anthropic SDK** | Claude AI provider |
+| **Socket.IO** | Real-time dashboard updates |
 | **express-session** | Session-based authentication |
 | **express-mysql-session** | MySQL session store |
 
