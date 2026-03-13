@@ -56,6 +56,9 @@ export const config = {
         maxConcurrentAgents: 3,
     },
 
+    // DATABASE_URL takes priority over individual MYSQL_* vars
+    databaseUrl: process.env.DATABASE_URL || '',
+
     mysql: {
         host: process.env.MYSQL_HOST || 'localhost',
         port: parseInt(process.env.MYSQL_PORT || '3306', 10),

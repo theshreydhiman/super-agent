@@ -8,6 +8,14 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('Migrate');
 
 async function ensureDatabase(): Promise<void> {
+    if (config.databaseUrl) {
+        // When using DATABASE_URL, the database is expected to already exist
+        // (managed by the hosting provider like Render, Railway, etc.)
+        const url = new URL(config.databaseUrl);
+        log.info(`Using DATABASE_URL (database: "${url.pathname.slice(1)}")`);
+        return;
+    }
+
     const connection = await mysql.createConnection({
         host: config.mysql.host,
         port: config.mysql.port,

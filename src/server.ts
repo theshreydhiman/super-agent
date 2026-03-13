@@ -24,16 +24,32 @@ export function createApp(): express.Application {
 
     // Session setup
     const MySQLStore = require('express-mysql-session')(session);
-    const sessionStore = new MySQLStore({
-        host: config.mysql.host,
-        port: config.mysql.port,
-        user: config.mysql.user,
-        password: config.mysql.password,
-        database: config.mysql.database,
+    const sessionStoreOptions: any = {
         clearExpired: true,
         checkExpirationInterval: 900000,
         expiration: 86400000,
-    });
+    };
+
+    if (config.databaseUrl) {
+        // Use DATABASE_URL for production
+        const url = new URL(config.databaseUrl);
+        sessionStoreOptions.host = url.hostname;
+        sessionStoreOptions.port = parseInt(url.port || '3306', 10);
+        sessionStoreOptions.user = url.username;
+        sessionStoreOptions.password = url.password;
+        sessionStoreOptions.database = url.pathname.slice(1);
+        if (url.searchParams.has('ssl') || url.protocol === 'mysqls:') {
+            sessionStoreOptions.ssl = { rejectUnauthorized: false };
+        }
+    } else {
+        sessionStoreOptions.host = config.mysql.host;
+        sessionStoreOptions.port = config.mysql.port;
+        sessionStoreOptions.user = config.mysql.user;
+        sessionStoreOptions.password = config.mysql.password;
+        sessionStoreOptions.database = config.mysql.database;
+    }
+
+    const sessionStore = new MySQLStore(sessionStoreOptions);
 
     const isProduction = process.env.NODE_ENV === 'production';
 
