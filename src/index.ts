@@ -1,6 +1,5 @@
 import http from 'http';
 import { config } from './config';
-import { SuperAgent } from './agents/super-agent';
 import { WebhookServer } from './triggers/webhook-server';
 import { createApp } from './server';
 import { runMigrations } from './db/migrate';
@@ -42,11 +41,8 @@ async function main(): Promise<void> {
     // Create shared Express app
     const app = createApp();
 
-    // Webhook SuperAgent uses .env defaults (no user context)
-    const superAgent = new SuperAgent();
-
     // Setup webhook and health routes on the shared app
-    new WebhookServer(app, superAgent);
+    new WebhookServer(app);
 
     // Start the unified server with Socket.IO
     const port = config.triggers.webhookPort;
