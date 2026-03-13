@@ -3,17 +3,22 @@ import crypto from 'crypto';
 import { config } from '../config';
 import { SuperAgent } from '../agents/super-agent';
 import { getPool } from '../db/connection';
+
 import { createLogger } from '../utils/logger';
+import { UserRepository } from '../repositories/user-repository';
+import { ConfigRepository } from '../repositories/config-repository';
+import { getUserRuntimeConfig } from '../services/user-config';
+import { IssueTracker } from '../services/run-tracker';
 
 const log = createLogger('WebhookServer');
+const userRepo = new UserRepository();
+const configRepo = new ConfigRepository();
 
 export class WebhookServer {
     private app: express.Application;
-    private superAgent: SuperAgent;
 
-    constructor(app: express.Application, superAgent: SuperAgent) {
+    constructor(app: express.Application) {
         this.app = app;
-        this.superAgent = superAgent;
         this.setupRoutes();
     }
 
@@ -24,6 +29,8 @@ export class WebhookServer {
 
         // Health check — verify DB connectivity
         this.app.get('/health', async (_req, res) => {
+            console.log("Health checked");
+            
             const health: { status: string; service: string; timestamp: string; database?: string } = {
                 status: 'ok',
                 service: 'Super Agent',
@@ -57,15 +64,31 @@ export class WebhookServer {
                     return;
                 }
 
+                // Fetch webhook secret from database
+                let webhookSecret = config.github.webhookSecret;
+                try {
+                    const userId = await userRepo.findByGithubId(payload.sender?.id)?.then(u => u?.id);
+                    if (userId) {
+                        const dbSecret = await configRepo.get(userId, 'webhook_secret');
+                        if (dbSecret) {
+                            webhookSecret = dbSecret;
+                        }
+                    } else {
+                        log.warn('Webhook sender not found in database', { githubId: payload.sender?.id });
+                    }
+                } catch (err) {
+                    log.warn('Failed to fetch webhook secret from database', { error: (err as any).message });
+                }
+
                 // Verify webhook signature
-                if (config.github.webhookSecret) {
+                if (webhookSecret) {
                     const signature = req.headers['x-hub-signature-256'] as string;
 
                     log.info('Webhook signature verification', {
                         hasSignatureHeader: !!signature,
                         signaturePrefix: signature ? signature.substring(0, 20) + '...' : 'none',
                         rawBodyLength: rawBody.length,
-                        configuredSecretLength: config.github.webhookSecret.length,
+                        configuredSecretLength: webhookSecret.length,
                     });
 
                     if (!signature) {
@@ -74,9 +97,9 @@ export class WebhookServer {
                         return;
                     }
 
-                    if (!this.verifySignature(rawBody, signature)) {
+                    if (!this.verifySignature(rawBody, signature, webhookSecret)) {
                         const expected = `sha256=${crypto
-                            .createHmac('sha256', config.github.webhookSecret)
+                            .createHmac('sha256', webhookSecret)
                             .update(rawBody)
                             .digest('hex')}`;
                         log.warn('Webhook signature mismatch', {
@@ -136,36 +159,55 @@ export class WebhookServer {
         const hasTargetLabel = labels.includes(config.github.issueLabel);
         const isNew = action === 'opened';
         const isLabeled = action === 'labeled' &&
-            payload.label?.name === config.github.issueLabel;
+            labels.includes(config.github.issueLabel);
 
         if (hasTargetLabel && (isNew || isLabeled)) {
             const repoName = payload.repository?.name;
+            const repoOwner = payload.repository?.owner?.login;
             if (!repoName) {
                 log.warn('Webhook payload missing repository name');
                 return;
             }
 
-            log.info(`Triggering Super Agent for issue #${issue.number} in ${repoName}`);
+            // Look up the sender's user record to get their OAuth token and config
+            const senderGithubId = payload.sender?.id;
+            const user = senderGithubId ? await userRepo.findByGithubId(senderGithubId) : null;
 
-            setImmediate(() => {
-                if (repoName && !config.github.repo) {
-                    this.superAgent.processRepo(repoName).catch((err) => {
-                        log.error(`Super Agent run failed for ${repoName}`, { error: err.message });
-                    });
-                } else {
-                    this.superAgent.run().catch((err) => {
-                        log.error('Super Agent run failed', { error: err.message });
-                    });
-                }
+            if (!user) {
+                log.warn('Webhook sender not registered — cannot authenticate GitHub API calls', { githubId: senderGithubId });
+                return;
+            }
+
+            if (!user.github_access_token) {
+                log.warn('Webhook sender has no GitHub token — please re-login via dashboard', { user: user.github_login });
+                return;
+            }
+
+            const userConfig = await getUserRuntimeConfig(user.id, user.github_access_token, user.github_login);
+            const tracker = new IssueTracker(user.id);
+            const agent = new SuperAgent(tracker.createCallbacks(), userConfig, user.email);
+
+            log.info(`Triggering Super Agent for issue #${issue.number} in ${repoName} (user: ${user.github_login})`);
+
+            setTimeout(() => {
+                agent.processRepo(repoName, { owner: repoOwner }).catch((err) => {
+                    log.error(`Super Agent run failed for ${repoName}`, { error: err.message });
+                });
+            }, 1000); // Delay to allow GitHub's eventual consistency to settle
+        } else {
+            log.info(`Issue #${issue.number} does not meet trigger conditions`, {
+                hasTargetLabel,
+                isNew,
+                isLabeled,
             });
         }
     }
 
-    private verifySignature(payload: Buffer, signature: string): boolean {
+    private verifySignature(payload: Buffer, signature: string, webhookSecret: string): boolean {
         if (!signature || !payload) return false;
 
         const expected = `sha256=${crypto
-            .createHmac('sha256', config.github.webhookSecret)
+            .createHmac('sha256', webhookSecret)
             .update(payload)
             .digest('hex')}`;
 

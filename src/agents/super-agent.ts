@@ -52,17 +52,18 @@ export class SuperAgent {
         return this.discoveryClient.listOwnerRepos();
     }
 
-    async processRepo(repoName: string, options?: { skipLabelFilter?: boolean; issueNumber?: number; issueNumbers?: number[] }): Promise<void> {
+    async processRepo(repoName: string, options?: { skipLabelFilter?: boolean; issueNumber?: number; issueNumbers?: number[]; owner?: string }): Promise<void> {
         if (this.processingRepos.has(repoName)) {
             log.warn(`Already processing ${repoName}, skipping`);
             return;
         }
 
         this.processingRepos.add(repoName);
-        const github = new GitHubClient(this.cfg.github.owner, repoName, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
+        const owner = options?.owner || this.cfg.github.owner;
+        const github = new GitHubClient(owner, repoName, this.cfg !== config ? this.cfg as UserRuntimeConfig : undefined);
 
         try {
-            log.info(`--- Processing repo: ${this.cfg.github.owner}/${repoName} ---`);
+            log.info(`--- Processing repo: ${owner}/${repoName} ---`);
 
             let issues = await github.fetchOpenIssues({ skipLabelFilter: options?.skipLabelFilter });
 
@@ -102,7 +103,7 @@ export class SuperAgent {
             }
 
             // Spawn Worker Agents (concurrently with limit)
-            const { results: workerResults, issueDbIdMap } = await this.spawnWorkers(issues, github, repoName);
+            const { results: workerResults, issueDbIdMap } = await this.spawnWorkers(issues, github, repoName, owner);
 
             const successCount = workerResults.filter((r) => r.success).length;
             const failCount = workerResults.filter((r) => !r.success).length;
@@ -155,7 +156,8 @@ export class SuperAgent {
     private async spawnWorkers(
         issues: GitHubIssue[],
         github: GitHubClient,
-        repoName: string
+        repoName: string,
+        owner: string
     ): Promise<{ results: WorkerResult[]; issueDbIdMap: Map<number, number> }> {
         const maxConcurrent = this.cfg.agent.maxConcurrentAgents;
         const results: WorkerResult[] = [];
@@ -176,7 +178,7 @@ export class SuperAgent {
                     try {
                         issueDbId = await this.callbacks.onIssueStart(
                             issue.number, issue.title,
-                            this.cfg.github.owner, repoName
+                            owner, repoName
                         );
                     } catch (cbErr: any) {
                         log.error(`Failed to track issue start for #${issue.number}`, { error: cbErr.message });
@@ -218,7 +220,7 @@ export class SuperAgent {
 
     private logSummary(repoName: string, workerResults: WorkerResult[], reviewedPRs: ReviewedPR[]): void {
         log.info('='.repeat(60));
-        log.info(`  SUMMARY — ${this.cfg.github.owner}/${repoName}`);
+        log.info(`  SUMMARY — ${repoName}`);
         log.info('='.repeat(60));
 
         for (const result of workerResults) {
