@@ -15,7 +15,7 @@ router.get('/github', (req: Request, res: Response) => {
     const baseUrl = config.dashboard.url || `${req.protocol}://${req.get('host')}`;
     const params = new URLSearchParams({
         client_id: config.github.clientId,
-        redirect_uri: `https://nolan-verminous-nidia.ngrok-free.dev/auth/github/callback`,
+        redirect_uri: `${baseUrl}/auth/github/callback`,
         scope: 'read:user user:email repo',
         state,
     });
