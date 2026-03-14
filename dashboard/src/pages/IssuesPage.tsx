@@ -56,17 +56,17 @@ export default function IssuesPage() {
     };
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex flex-col min-h-screen min-w-0 overflow-hidden">
             <PageHeader
                 title="Issues"
                 subtitle="GitHub issues labeled for AI processing"
                 actions={
                     <div className="flex items-center gap-2">
-                        <Filter size={14} className="text-text-muted" />
+                        <Filter size={14} className="text-text-muted hidden sm:block" />
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2 text-sm font-mono focus:border-accent focus:outline-none transition-colors appearance-none cursor-pointer"
+                            className="bg-white/[0.04] border border-border text-text-secondary rounded-lg px-3 py-2 text-sm font-mono focus:border-accent focus:outline-none transition-colors appearance-none cursor-pointer w-full sm:w-auto"
                         >
                             <option value="">All statuses</option>
                             <option value="pending">Pending</option>
@@ -80,7 +80,7 @@ export default function IssuesPage() {
                 }
             />
 
-            <div className="flex-1 dot-grid p-7">
+            <div className="flex-1 dot-grid p-4 sm:p-7">
                 {message && (
                     <div className={`mb-5 p-3 rounded-lg text-sm font-mono border ${
                         message.includes('Failed')
@@ -101,49 +101,107 @@ export default function IssuesPage() {
                             No issues found with the <code className="text-cyan-text bg-cyan-muted px-1.5 py-0.5 rounded font-mono text-xs">ai-agent</code> label.
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Issue</th>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Repository</th>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Status</th>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">PR</th>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Date</th>
-                                        <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02]">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredIssues.map((issue) => {
-                                        const key = `${issue.repo_name}-${issue.issue_number}`;
-                                        const isFixing = fixingIssues.has(key);
-                                        return (
-                                            <tr key={key} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors">
-                                                <td className="px-6 py-3.5 text-[13px]">
-                                                    <a href={issue.issue_url} target="_blank" rel="noopener noreferrer" className="text-text-primary hover:text-accent-text transition-colors font-medium">
-                                                        <span className="text-text-dim font-mono text-xs mr-2">#{issue.issue_number}</span>
-                                                        {issue.issue_title}
-                                                    </a>
-                                                </td>
-                                                <td className="px-6 py-3.5">
-                                                    <span className="text-xs text-text-muted font-mono">{issue.repo_owner}/{issue.repo_name}</span>
-                                                </td>
-                                                <td className="px-6 py-3.5" title={issue.status === 'failed' && issue.error_message ? issue.error_message : undefined}>
-                                                    <StatusBadge status={issue.status} />
-                                                </td>
-                                                <td className="px-6 py-3.5 text-sm">
-                                                    {issue.pr_url ? (
-                                                        <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-accent-text hover:text-accent-light font-mono text-xs transition-colors">
-                                                            #{issue.pr_number}
+                        <>
+                            {/* Desktop table */}
+                            <div className="hidden lg:block overflow-x-auto">
+                                <table className="w-full table-fixed">
+                                    <thead>
+                                        <tr>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[40%]">Issue</th>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[18%]">Repository</th>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[10%]">Status</th>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[8%]">PR</th>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[12%]">Date</th>
+                                            <th className="text-left px-6 py-3 text-[11px] uppercase tracking-[0.8px] text-text-dim font-semibold bg-white/[0.02] w-[12%]">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredIssues.map((issue) => {
+                                            const key = `${issue.repo_name}-${issue.issue_number}`;
+                                            const isFixing = fixingIssues.has(key);
+                                            return (
+                                                <tr key={key} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                                                    <td className="px-6 py-3.5 text-[13px] truncate">
+                                                        <a href={issue.issue_url} target="_blank" rel="noopener noreferrer" className="text-text-primary hover:text-accent-text transition-colors font-medium" title={issue.issue_title}>
+                                                            <span className="text-text-dim font-mono text-xs mr-2">#{issue.issue_number}</span>
+                                                            {issue.issue_title}
                                                         </a>
-                                                    ) : (
-                                                        <span className="text-text-dim">&mdash;</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-3.5 text-xs text-text-dim font-mono">
-                                                    {new Date(issue.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                </td>
-                                                <td className="px-6 py-3.5">
+                                                    </td>
+                                                    <td className="px-6 py-3.5 truncate">
+                                                        <span className="text-xs text-text-muted font-mono">{issue.repo_owner}/{issue.repo_name}</span>
+                                                    </td>
+                                                    <td className="px-6 py-3.5" title={issue.status === 'failed' && issue.error_message ? issue.error_message : undefined}>
+                                                        <StatusBadge status={issue.status} />
+                                                    </td>
+                                                    <td className="px-6 py-3.5 text-sm">
+                                                        {issue.pr_url ? (
+                                                            <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-accent-text hover:text-accent-light font-mono text-xs transition-colors">
+                                                                #{issue.pr_number}
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-text-dim">&mdash;</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-3.5 text-xs text-text-dim font-mono">
+                                                        {new Date(issue.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    </td>
+                                                    <td className="px-6 py-3.5">
+                                                        {issue.status === 'pending' && (
+                                                            <button
+                                                                onClick={() => handleFix(issue)}
+                                                                disabled={isFixing}
+                                                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:glow-accent flex items-center gap-1.5 font-mono"
+                                                            >
+                                                                <Play size={12} />
+                                                                {isFixing ? 'FIXING...' : 'FIX'}
+                                                            </button>
+                                                        )}
+                                                        {issue.status === 'failed' && (
+                                                            <button
+                                                                onClick={() => handleFix(issue, true)}
+                                                                disabled={isFixing}
+                                                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 font-mono"
+                                                            >
+                                                                <RotateCcw size={12} />
+                                                                {isFixing ? 'RETRYING...' : 'RETRY'}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile card list */}
+                            <div className="lg:hidden divide-y divide-white/[0.04]">
+                                {filteredIssues.map((issue) => {
+                                    const key = `${issue.repo_name}-${issue.issue_number}`;
+                                    const isFixing = fixingIssues.has(key);
+                                    return (
+                                        <div key={key} className="p-4 hover:bg-white/[0.02] transition-colors">
+                                            <div className="flex items-start justify-between gap-2 mb-2">
+                                                <a href={issue.issue_url} target="_blank" rel="noopener noreferrer" className="text-sm text-text-primary hover:text-accent-text transition-colors font-medium leading-snug min-w-0 flex-1 break-words">
+                                                    <span className="text-text-dim font-mono text-xs mr-1.5 whitespace-nowrap">#{issue.issue_number}</span>
+                                                    {issue.issue_title}
+                                                </a>
+                                            </div>
+                                            <div className="flex items-center flex-wrap gap-x-3 gap-y-2 mt-2">
+                                                <StatusBadge status={issue.status} />
+                                                <span className="text-xs text-text-dim font-mono break-all">{issue.repo_owner}/{issue.repo_name}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-text-dim opacity-30 hidden sm:inline">&middot;</span>
+                                                    <span className="text-xs text-text-dim font-mono whitespace-nowrap">{new Date(issue.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                </div>
+                                                {issue.pr_url && (
+                                                    <a href={issue.pr_url} target="_blank" rel="noopener noreferrer" className="text-xs text-accent-text hover:text-accent-light font-mono transition-colors whitespace-nowrap">
+                                                        PR #{issue.pr_number}
+                                                    </a>
+                                                )}
+                                            </div>
+                                            {(issue.status === 'pending' || issue.status === 'failed') && (
+                                                <div className="mt-3">
                                                     {issue.status === 'pending' && (
                                                         <button
                                                             onClick={() => handleFix(issue)}
@@ -164,13 +222,13 @@ export default function IssuesPage() {
                                                             {isFixing ? 'RETRYING...' : 'RETRY'}
                                                         </button>
                                                     )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
                     )}
                 </div>
             </div>

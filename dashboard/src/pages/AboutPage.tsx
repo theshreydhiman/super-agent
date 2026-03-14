@@ -43,7 +43,7 @@ export default function AboutPage() {
                 }
             />
 
-            <div className="flex-1 dot-grid p-7">
+            <div className="flex-1 dot-grid p-4 sm:p-7">
                 <div className="max-w-3xl">
                     {/* Hero */}
                     <div className="bg-surface border border-border rounded-xl p-8 mb-6 text-center">
@@ -160,7 +160,7 @@ export default function AboutPage() {
                     </div>
 
                     {/* CTA */}
-                    <div className="bg-surface border border-border rounded-xl p-6 flex items-center justify-between">
+                    <div className="bg-surface border border-border rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div>
                             <h3 className="text-[15px] font-semibold text-zinc-100">Ready to get started?</h3>
                             <p className="text-[13px] text-text-dim mt-1">Set up your agent in a few minutes.</p>

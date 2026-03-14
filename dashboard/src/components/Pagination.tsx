@@ -13,7 +13,7 @@ export default function Pagination({ page, total, limit, onPageChange }: Paginat
     if (totalPages <= 1) return null;
 
     return (
-        <div className="flex items-center justify-between mt-4 px-6 py-3 border-t border-border">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-4 px-4 sm:px-6 py-3 border-t border-border">
             <p className="text-[12px] text-text-muted font-mono">
                 {(page - 1) * limit + 1}&ndash;{Math.min(page * limit, total)} of {total}
             </p>

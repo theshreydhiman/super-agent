@@ -18,9 +18,9 @@ const colorMap = {
 
 export default function StatsCard({ label, value, icon: Icon, trend, color = 'blue' }: StatsCardProps) {
     return (
-        <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-hover transition-all duration-200 group">
-            <div className="flex items-center justify-between mb-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
+        <div className="bg-surface border border-border rounded-xl p-3.5 sm:p-5 hover:border-border-hover transition-all duration-200 group">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
                     <Icon size={18} />
                 </div>
                 {trend && (
@@ -33,10 +33,10 @@ export default function StatsCard({ label, value, icon: Icon, trend, color = 'bl
                     </span>
                 )}
             </div>
-            <div className="text-[32px] font-bold text-zinc-100 tracking-tight leading-none mb-1.5 font-mono group-hover:text-cyan-text transition-colors duration-200">
+            <div className="text-2xl sm:text-[32px] font-bold text-zinc-100 tracking-tight leading-none mb-1 sm:mb-1.5 font-mono group-hover:text-cyan-text transition-colors duration-200">
                 {value}
             </div>
-            <div className="text-[13px] text-text-muted font-medium">{label}</div>
+            <div className="text-[12px] sm:text-[13px] text-text-muted font-medium">{label}</div>
         </div>
     );
 }

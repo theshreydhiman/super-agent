@@ -2,8 +2,8 @@ import { Terminal } from 'lucide-react';
 
 export default function LoginPage() {
     return (
-        <div className="min-h-screen bg-base dot-grid flex items-center justify-center">
-            <div className="bg-surface border border-border rounded-xl p-10 max-w-md w-full text-center">
+        <div className="min-h-screen bg-base dot-grid flex items-center justify-center px-4">
+            <div className="bg-surface border border-border rounded-xl p-6 sm:p-10 max-w-md w-full text-center">
                 {/* Brand */}
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center mx-auto mb-6">
                     <Terminal size={28} className="text-white" />

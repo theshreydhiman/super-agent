@@ -119,7 +119,7 @@ export default function ConfigPage() {
                 title="Settings"
                 subtitle="Configure your agent"
                 actions={
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
                         <button
                             onClick={handleTest}
                             className="px-4 py-2.5 rounded-[10px] text-[13px] font-semibold bg-white/[0.06] text-text-secondary border border-border hover:bg-white/[0.1] hover:text-text-primary transition-all flex items-center gap-2"
@@ -139,7 +139,7 @@ export default function ConfigPage() {
                 }
             />
 
-            <div className="flex-1 dot-grid p-7">
+            <div className="flex-1 dot-grid p-4 sm:p-7">
                 <div className="max-w-3xl">
                     {message && (
                         <div className={`mb-5 p-3 rounded-lg text-sm font-mono border ${
