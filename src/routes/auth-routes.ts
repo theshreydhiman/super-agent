@@ -8,6 +8,29 @@ const log = createLogger('AuthRoutes');
 const router = Router();
 const userRepo = new UserRepository();
 
+/** GitHub OAuth token exchange response */
+interface GitHubTokenResponse {
+    access_token?: string;
+    token_type?: string;
+    scope?: string;
+    error?: string;
+    error_description?: string;
+}
+
+/** GitHub user profile from /user endpoint */
+interface GitHubUser {
+    id: number;
+    login: string;
+    avatar_url: string;
+}
+
+/** GitHub email entry from /user/emails endpoint */
+interface GitHubEmail {
+    email: string;
+    primary: boolean;
+    verified: boolean;
+}
+
 router.get('/github', (req: Request, res: Response) => {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.oauthState = state;
@@ -30,7 +53,6 @@ router.get('/github/callback', async (req: Request, res: Response) => {
         return;
     }
 
-    // Validate OAuth state to prevent CSRF
     if (!state || state !== req.session.oauthState) {
         log.warn('OAuth state mismatch');
         res.status(403).json({ error: 'Invalid OAuth state' });
@@ -53,18 +75,20 @@ router.get('/github/callback', async (req: Request, res: Response) => {
             }),
         });
 
-        const tokenData = await tokenResponse.json() as any;
+        const tokenData = await tokenResponse.json() as GitHubTokenResponse;
 
-        if (tokenData.error) {
+        if (tokenData.error || !tokenData.access_token) {
             log.error('OAuth token exchange failed', { error: tokenData.error_description });
-            res.status(400).json({ error: tokenData.error_description });
+            res.status(400).json({ error: tokenData.error_description || 'Token exchange failed' });
             return;
         }
+
+        const accessToken = tokenData.access_token;
 
         // Get user info from GitHub
         const userResponse = await fetch('https://api.github.com/user', {
             headers: {
-                Authorization: `Bearer ${tokenData.access_token}`,
+                Authorization: `Bearer ${accessToken}`,
                 Accept: 'application/vnd.github.v3+json',
             },
         });
@@ -75,19 +99,19 @@ router.get('/github/callback', async (req: Request, res: Response) => {
             return;
         }
 
-        const githubUser = await userResponse.json() as any;
+        const githubUser = await userResponse.json() as GitHubUser;
 
         // Get primary email
         let email: string | undefined;
         try {
             const emailResponse = await fetch('https://api.github.com/user/emails', {
                 headers: {
-                    Authorization: `Bearer ${tokenData.access_token}`,
+                    Authorization: `Bearer ${accessToken}`,
                     Accept: 'application/vnd.github.v3+json',
                 },
             });
-            const emails = await emailResponse.json() as any[];
-            const primary = emails.find((e: any) => e.primary);
+            const emails = await emailResponse.json() as GitHubEmail[];
+            const primary = emails.find((e) => e.primary);
             email = primary?.email;
         } catch {
             // Email is optional
@@ -98,19 +122,16 @@ router.get('/github/callback', async (req: Request, res: Response) => {
             github_id: githubUser.id,
             github_login: githubUser.login,
             github_avatar_url: githubUser.avatar_url,
-            github_access_token: tokenData.access_token,
+            github_access_token: accessToken,
             email,
         });
 
-        // Set session
         req.session.userId = user.id;
-
         log.info(`User ${user.github_login} logged in`);
-
-        // Redirect to dashboard
         res.redirect('/');
-    } catch (error: any) {
-        log.error('OAuth callback failed', { error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        log.error('OAuth callback failed', { error: message });
         res.status(500).json({ error: 'Authentication failed' });
     }
 });

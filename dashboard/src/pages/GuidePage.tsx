@@ -96,7 +96,7 @@ export default function GuidePage() {
                 }
             />
 
-            <div className="flex-1 dot-grid p-7">
+            <div className="flex-1 dot-grid p-4 sm:p-7">
                 <div className="max-w-3xl">
                     {/* Intro */}
                     <div className="bg-surface border border-border rounded-xl p-6 mb-6">

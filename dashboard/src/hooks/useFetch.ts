@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../api/client';
 
-export function useFetch<T>(url: string, deps: any[] = []) {
+export function useFetch<T>(url: string) {
     const [data, setData] = useState<T | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -12,12 +12,12 @@ export function useFetch<T>(url: string, deps: any[] = []) {
         try {
             const result = await apiFetch<T>(url);
             setData(result);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
             setLoading(false);
         }
-    }, [url, ...deps]);
+    }, [url]);
 
     useEffect(() => {
         refetch();
@@ -42,8 +42,8 @@ export function useFetchBranches(repo: string) {
             const [owner, name] = repo.split('/');
             const result = await apiFetch<string[]>(`/api/config/repos/${owner}/${name}/branches`);
             setBranches(result);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Unknown error');
             setBranches([]);
         } finally {
             setLoading(false);

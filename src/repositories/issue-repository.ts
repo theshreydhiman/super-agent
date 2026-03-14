@@ -21,11 +21,17 @@ export interface ProcessedIssue {
 }
 
 /** Safely coerce a MySQL aggregate value (may be string, BigInt, or number) to a JS number. */
-function toNumber(val: any): number {
+function toNumber(val: unknown): number {
     if (val === null || val === undefined) return 0;
     if (typeof val === 'bigint') return Number(val);
     return parseInt(String(val), 10) || 0;
 }
+
+/** Columns allowed in dynamic UPDATE queries — prevents SQL injection via object keys */
+const UPDATABLE_COLUMNS = new Set<string>([
+    'status', 'branch_name', 'pr_number', 'pr_url',
+    'review_approved', 'review_score', 'error_message',
+]);
 
 export class IssueRepository {
     async create(data: {
@@ -50,10 +56,13 @@ export class IssueRepository {
         data: Partial<Pick<ProcessedIssue, 'status' | 'branch_name' | 'pr_number' | 'pr_url' | 'review_approved' | 'review_score' | 'error_message'>>
     ): Promise<void> {
         const fields: string[] = [];
-        const values: any[] = [];
+        const values: (string | number | boolean | null)[] = [];
 
         for (const [key, value] of Object.entries(data)) {
             if (value === undefined) continue;
+            if (!UPDATABLE_COLUMNS.has(key)) {
+                throw new Error(`Invalid column name for update: ${key}`);
+            }
             fields.push(`${key} = ?`);
             values.push(value);
         }
@@ -109,7 +118,7 @@ export class IssueRepository {
         const offset = (page - 1) * limit;
 
         let where = 'WHERE user_id = ?';
-        const params: any[] = [userId];
+        const params: (string | number)[] = [userId];
 
         if (options.status) {
             where += ' AND status = ?';
@@ -124,7 +133,7 @@ export class IssueRepository {
             `SELECT COUNT(*) as total FROM processed_issues ${where}`,
             params
         );
-        const total = toNumber((countRows[0] as any).total);
+        const total = toNumber((countRows[0] as RowDataPacket).total);
 
         const [rows] = await pool.execute<RowDataPacket[]>(
             `SELECT * FROM processed_issues ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
@@ -165,7 +174,7 @@ export class IssueRepository {
              FROM processed_issues WHERE user_id = ?`,
             [userId]
         );
-        const row = rows[0] as any;
+        const row = rows[0] as RowDataPacket;
         return {
             totalIssues: toNumber(row.total_issues),
             successCount: toNumber(row.success_count),

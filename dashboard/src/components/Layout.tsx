@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Bug, Settings, LogOut, BookOpen, Info } from 'lucide-react';
+import { LayoutDashboard, Bug, Settings, LogOut, BookOpen, Info, Menu, X } from 'lucide-react';
 import type { User } from '../hooks/useAuth';
 
 interface LayoutProps {
@@ -39,22 +40,68 @@ const publicNavSections = [
 export default function Layout({ children, user, onLogout }: LayoutProps) {
     const location = useLocation();
     const navSections = user ? authenticatedNavSections : publicNavSections;
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     return (
         <div className="min-h-screen bg-base text-text-primary flex">
+            {/* Mobile top bar */}
+            <div className="fixed top-0 left-0 right-0 z-30 lg:hidden glass border-b border-border">
+                <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setSidebarOpen(true)}
+                            className="w-9 h-9 rounded-[10px] flex items-center justify-center bg-white/[0.04] border border-border text-text-muted hover:bg-white/[0.08] hover:text-text-primary transition-all"
+                            aria-label="Open menu"
+                        >
+                            <Menu size={18} />
+                        </button>
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center text-white font-bold text-xs">
+                                S
+                            </div>
+                            <span className="text-sm font-bold text-zinc-100 tracking-tight">Super Agent</span>
+                        </div>
+                    </div>
+                    {user && user.github_avatar_url && (
+                        <img
+                            src={user.github_avatar_url}
+                            alt={user.github_login}
+                            className="w-7 h-7 rounded-full"
+                        />
+                    )}
+                </div>
+            </div>
+
+            {/* Sidebar overlay backdrop */}
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
-            <aside className="w-[260px] bg-[#0e0e16] border-r border-border flex flex-col fixed top-0 left-0 h-screen z-10">
+            <aside className={`w-[260px] bg-[#0e0e16] border-r border-border flex flex-col fixed top-0 left-0 h-screen z-50 transition-transform duration-300 ease-in-out ${
+                sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            } lg:translate-x-0`}>
                 {/* Brand */}
-                <div className="px-6 py-7 border-b border-border">
+                <div className="px-6 py-7 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center text-white font-bold text-base">
                             S
                         </div>
                         <span className="text-lg font-bold text-zinc-100 tracking-tight">Super Agent</span>
-                        <span className="ml-auto text-[10px] font-semibold text-accent-text bg-accent-muted px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-semibold text-accent-text bg-accent-muted px-2 py-0.5 rounded-full">
                             v1.0
                         </span>
                     </div>
+                    <button
+                        onClick={() => setSidebarOpen(false)}
+                        className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/[0.06] transition-all"
+                        aria-label="Close menu"
+                    >
+                        <X size={18} />
+                    </button>
                 </div>
 
                 {/* Navigation */}
@@ -73,6 +120,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                                     <Link
                                         key={item.path}
                                         to={item.path}
+                                        onClick={() => setSidebarOpen(false)}
                                         className={`flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium font-mono transition-all duration-150 mb-0.5 ${
                                             isActive
                                                 ? 'bg-accent-muted text-accent-light'
@@ -122,6 +170,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                     <div className="px-4 py-4 border-t border-border">
                         <Link
                             to="/login"
+                            onClick={() => setSidebarOpen(false)}
                             className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-[10px] text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-all"
                         >
                             Sign in with GitHub
@@ -131,7 +180,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
             </aside>
 
             {/* Main content */}
-            <main className="ml-[260px] flex-1 min-h-screen flex flex-col">
+            <main className="lg:ml-[260px] flex-1 min-h-screen flex flex-col pt-[57px] lg:pt-0">
                 {children}
             </main>
         </div>
@@ -145,13 +194,13 @@ export function PageHeader({ title, subtitle, actions }: {
     actions?: React.ReactNode;
 }) {
     return (
-        <header className="glass scanline relative px-8 py-5 border-b border-border sticky top-0 z-5 flex items-center justify-between">
-            <div>
-                <h1 className="text-[22px] font-bold text-zinc-100 tracking-tight">{title}</h1>
-                {subtitle && <p className="text-[13px] text-text-muted mt-1">{subtitle}</p>}
+        <header className="glass scanline relative px-4 sm:px-8 py-4 sm:py-5 border-b border-border sticky lg:top-0 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+                <h1 className="text-lg sm:text-[22px] font-bold text-zinc-100 tracking-tight">{title}</h1>
+                {subtitle && <p className="text-[12px] sm:text-[13px] text-text-muted mt-0.5 sm:mt-1">{subtitle}</p>}
             </div>
             {actions && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-shrink-0">
                     {actions}
                 </div>
             )}
