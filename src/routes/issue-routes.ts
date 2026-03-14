@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Octokit } from '@octokit/rest';
-import { requireAuth } from '../middleware/auth-middleware';
+import { requireAuth, getAccessToken } from '../middleware/auth-middleware';
 import { IssueRepository } from '../repositories/issue-repository';
 import { ConfigRepository } from '../repositories/config-repository';
 import { SuperAgent } from '../agents/super-agent';
@@ -19,12 +19,7 @@ router.use(requireAuth);
 router.get('/', async (req: Request, res: Response) => {
     try {
         const owner = req.user!.github_login;
-        const token = req.user!.github_access_token;
-
-        if (!token) {
-            res.status(400).json({ error: 'GitHub access token not available. Please re-login.' });
-            return;
-        }
+        const token = getAccessToken(req);
 
         // Read selected repo from user config
         const selectedRepo = await configRepo.get(req.user!.id, 'github_repo');
@@ -129,9 +124,10 @@ router.get('/', async (req: Request, res: Response) => {
         allIssues.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         res.json({ issues: allIssues, total: allIssues.length });
-    } catch (error: any) {
-        log.error('Failed to fetch issues', { error: error.message });
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        log.error('Failed to fetch issues', { error: message });
+        res.status(500).json({ error: message });
     }
 });
 
@@ -148,7 +144,13 @@ router.post('/trigger', async (req: Request, res: Response) => {
             return;
         }
 
-        const userConfig = await getUserRuntimeConfig(req.user!.id, req.user!.github_access_token, req.user!.github_login);
+        const targetIssue = parseInt(String(issueNumber), 10);
+        if (isNaN(targetIssue) || targetIssue <= 0) {
+            res.status(400).json({ error: 'Invalid issue number' });
+            return;
+        }
+
+        const userConfig = await getUserRuntimeConfig(req.user!.id, getAccessToken(req), req.user!.github_login);
 
         if (!userConfig.github.owner) {
             res.status(400).json({ error: 'GitHub owner not configured. Please set it in Settings.' });
@@ -157,7 +159,6 @@ router.post('/trigger', async (req: Request, res: Response) => {
 
         const userId = req.user!.id;
         const userName = req.user!.github_login;
-        const targetIssue = parseInt(String(issueNumber), 10);
 
         // For retries, find existing DB record to update in-place
         let existingIssueMap: Map<number, number> | undefined;
@@ -187,8 +188,9 @@ router.post('/trigger', async (req: Request, res: Response) => {
         });
 
         res.json({ message: `Fix triggered for issue #${targetIssue}` });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 

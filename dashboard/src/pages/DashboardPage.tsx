@@ -293,10 +293,10 @@ export default function DashboardPage() {
                                     color="from-green-500 to-green-400"
                                 />
                                 <MetricBar
-                                    label="uptime"
-                                    value="99.2%"
-                                    percent={99}
-                                    color="from-cyan to-cyan-text"
+                                    label="fail_rate"
+                                    value={stats && stats.totalIssues > 0 ? `${Math.round((stats.failedCount / stats.totalIssues) * 100)}%` : '0%'}
+                                    percent={stats && stats.totalIssues > 0 ? Math.round((stats.failedCount / stats.totalIssues) * 100) : 0}
+                                    color="from-red-500 to-red-400"
                                 />
                             </div>
                         </div>

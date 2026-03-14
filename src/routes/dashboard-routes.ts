@@ -11,18 +11,20 @@ router.get('/stats', async (req: Request, res: Response) => {
     try {
         const stats = await issueRepo.getStats(req.user!.id);
         res.json(stats);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
 router.get('/recent', async (req: Request, res: Response) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 10;
+        const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
         const issues = await issueRepo.getRecent(req.user!.id, limit);
         res.json(issues);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 

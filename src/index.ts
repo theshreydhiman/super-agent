@@ -3,6 +3,7 @@ import { config } from './config';
 import { WebhookServer } from './triggers/webhook-server';
 import { createApp } from './server';
 import { runMigrations } from './db/migrate';
+import { closePool } from './db/connection';
 import { createLogger } from './utils/logger';
 import { startApiPoller, type SchedulerInstance } from './utils/scheduler';
 import { initSocket } from './socket';
@@ -22,10 +23,6 @@ async function main(): Promise<void> {
     log.info('Configuration loaded (user settings are fetched from DB at runtime)');
 
     // Validate critical config
-    if (config.sessionSecret === 'super-agent-secret-change-me') {
-        log.warn('SESSION_SECRET is using the default value — sessions can be forged. Set SESSION_SECRET in .env');
-    }
-
     if (!config.github.clientId || !config.github.clientSecret) {
         log.warn('GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET not set — OAuth login will not work');
     }
@@ -34,8 +31,9 @@ async function main(): Promise<void> {
     try {
         await runMigrations();
         log.info('Database initialized');
-    } catch (error: any) {
-        log.warn('Database initialization failed (dashboard will be unavailable):', { error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        log.warn('Database initialization failed (dashboard will be unavailable):', { error: message });
     }
 
     // Create shared Express app
@@ -58,26 +56,29 @@ async function main(): Promise<void> {
         log.info(`   Socket.IO: ws://localhost:${port}`);
     });
 
-    // Track active schedulers for cleanup on shutdown
+    // Keep-alive poller (configurable URL for production)
     const activeSchedulers: SchedulerInstance[] = [];
-
-    // TODO: Configure your API endpoint below
-    // Example: startApiPoller('http://localhost:3000/api/your-endpoint', 14)
-    const apiScheduler = startApiPoller('http://localhost:3001/health', 14);
+    const healthUrl = process.env.HEALTH_URL || `http://localhost:${port}/health`;
+    const apiScheduler = startApiPoller(healthUrl, 14);
     activeSchedulers.push(apiScheduler);
 
     // Graceful shutdown
-    const shutdown = (signal: string) => {
+    const shutdown = async (signal: string) => {
         log.info(`${signal} received. Shutting down gracefully...`);
 
-        // Stop all active schedulers
         activeSchedulers.forEach((scheduler) => scheduler.stop());
 
-        server.close(() => {
+        server.close(async () => {
+            try {
+                await closePool();
+                log.info('Database connections closed');
+            } catch {
+                // Pool may already be closed
+            }
             log.info('HTTP server closed');
             process.exit(0);
         });
-        // Force exit after 10s if connections don't close
+
         setTimeout(() => {
             log.warn('Forcing shutdown after timeout');
             process.exit(1);
@@ -87,9 +88,9 @@ async function main(): Promise<void> {
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-    // Catch unhandled rejections so background agent runs don't crash the process
-    process.on('unhandledRejection', (reason: any) => {
-        log.error('Unhandled promise rejection', { error: reason?.message || reason });
+    process.on('unhandledRejection', (reason: unknown) => {
+        const message = reason instanceof Error ? reason.message : String(reason);
+        log.error('Unhandled promise rejection', { error: message });
     });
 
     log.info('Super Agent is running. Press Ctrl+C to stop.');

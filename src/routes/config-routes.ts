@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth-middleware';
+import { requireAuth, getAccessToken } from '../middleware/auth-middleware';
 import { ConfigRepository } from '../repositories/config-repository';
 import { Octokit } from '@octokit/rest';
 
@@ -31,8 +31,9 @@ router.get('/', async (req: Request, res: Response) => {
     try {
         const configs = await configRepo.getAllMasked(req.user!.id);
         res.json(configs);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -80,20 +81,21 @@ router.put('/', async (req: Request, res: Response) => {
         }
 
         // Delete cleared values
-        for (const key of toDelete) {
-            await configRepo.delete(req.user!.id, key);
+        if (toDelete.length > 0) {
+            await configRepo.deleteMultiple(req.user!.id, toDelete);
         }
 
         const updated = await configRepo.getAllMasked(req.user!.id);
         res.json(updated);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
 router.get('/repos', async (req: Request, res: Response) => {
     try {
-        const octokit = new Octokit({ auth: req.user!.github_access_token });
+        const octokit = new Octokit({ auth: getAccessToken(req) });
         const { data: repos } = await octokit.repos.listForAuthenticatedUser({
             sort: 'updated',
             per_page: 100,
@@ -110,22 +112,24 @@ router.get('/repos', async (req: Request, res: Response) => {
                 updated_at: r.updated_at,
             }))
         );
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
 router.get('/repos/:owner/:repo/branches', async (req: Request, res: Response) => {
     try {
-        const octokit = new Octokit({ auth: req.user!.github_access_token });
+        const octokit = new Octokit({ auth: getAccessToken(req) });
         const { data: branches } = await octokit.repos.listBranches({
             owner: req.params.owner as string,
             repo: req.params.repo as string,
             per_page: 100,
         });
         res.json(branches.map((b) => b.name));
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -135,7 +139,7 @@ router.post('/test', async (req: Request, res: Response) => {
 
         // Test GitHub token
         try {
-            const octokit = new Octokit({ auth: req.user!.github_access_token });
+            const octokit = new Octokit({ auth: getAccessToken(req) });
             const { data } = await octokit.users.getAuthenticated();
             results.github = { success: true, message: `Connected as ${data.login}` };
         } catch (error: any) {
@@ -160,9 +164,10 @@ router.post('/test', async (req: Request, res: Response) => {
         }
 
         res.json(results);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(500).json({ error: message });
     }
 });
 
-export { router as configRoutes };
+export default router;

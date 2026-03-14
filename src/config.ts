@@ -1,7 +1,21 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+function requireEnv(key: string, fallback?: string): string {
+    const value = process.env[key];
+    if (value) return value;
+    if (isProduction) {
+        throw new Error(`Environment variable ${key} is required in production`);
+    }
+    if (fallback !== undefined) return fallback;
+    return '';
+}
+
 export const config = {
+    isProduction,
+
     // GitHub OAuth (global — required for server startup)
     github: {
         clientId: process.env.GITHUB_CLIENT_ID || '',
@@ -63,12 +77,12 @@ export const config = {
         host: process.env.MYSQL_HOST || 'localhost',
         port: parseInt(process.env.MYSQL_PORT || '3306', 10),
         user: process.env.MYSQL_USER || 'root',
-        password: process.env.MYSQL_PASSWORD || 'Pass@123',
+        password: process.env.MYSQL_PASSWORD || '',
         database: process.env.MYSQL_DATABASE || 'super_agent',
     },
 
-    sessionSecret: process.env.SESSION_SECRET || 'super-agent-secret-change-me',
-    encryptionKey: process.env.ENCRYPTION_KEY || 'default-encryption-key-change-me',
+    sessionSecret: requireEnv('SESSION_SECRET', 'dev-session-secret-not-for-production'),
+    encryptionKey: requireEnv('ENCRYPTION_KEY', 'dev-encryption-key-not-for-production'),
 
     dashboard: {
         url: process.env.DASHBOARD_URL || 'http://localhost:3001',

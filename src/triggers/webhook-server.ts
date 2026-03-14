@@ -6,13 +6,26 @@ import { getPool } from '../db/connection';
 
 import { createLogger } from '../utils/logger';
 import { UserRepository } from '../repositories/user-repository';
-import { ConfigRepository } from '../repositories/config-repository';
 import { getUserRuntimeConfig } from '../services/user-config';
 import { IssueTracker } from '../services/run-tracker';
 
 const log = createLogger('WebhookServer');
 const userRepo = new UserRepository();
-const configRepo = new ConfigRepository();
+
+interface WebhookIssuePayload {
+    action: string;
+    issue?: {
+        number: number;
+        title: string;
+        labels?: Array<{ name: string }>;
+    };
+    repository?: {
+        name: string;
+        full_name: string;
+        owner?: { login: string };
+    };
+    sender?: { id: number };
+}
 
 export class WebhookServer {
     private app: express.Application;
@@ -23,14 +36,10 @@ export class WebhookServer {
     }
 
     private setupRoutes(): void {
-        // Use express.raw() to capture the body as a Buffer — this is immune to
-        // other middleware consuming the body stream before we can read it.
         const rawBodyParser = express.raw({ type: 'application/json' });
 
         // Health check — verify DB connectivity
         this.app.get('/health', async (_req, res) => {
-            console.log("Health checked");
-            
             const health: { status: string; service: string; timestamp: string; database?: string } = {
                 status: 'ok',
                 service: 'Super Agent',
@@ -50,46 +59,19 @@ export class WebhookServer {
             res.status(statusCode).json(health);
         });
 
-        // GitHub webhook endpoint — body arrives as a raw Buffer via express.raw()
+        // GitHub webhook endpoint
         this.app.post('/webhook', rawBodyParser, async (req, res) => {
             try {
                 const rawBody = req.body as Buffer;
-                let payload: any;
-
-                try {
-                    payload = JSON.parse(rawBody.toString('utf8'));
-                } catch {
-                    log.error('Webhook body is not valid JSON', { bodyLength: rawBody?.length ?? 0 });
-                    res.status(400).json({ error: 'Invalid JSON body' });
+                if (!rawBody || rawBody.length === 0) {
+                    res.status(400).json({ error: 'Empty request body' });
                     return;
                 }
 
-                // Fetch webhook secret from database
-                let webhookSecret = config.github.webhookSecret;
-                try {
-                    const userId = await userRepo.findByGithubId(payload.sender?.id)?.then(u => u?.id);
-                    if (userId) {
-                        const dbSecret = await configRepo.get(userId, 'webhook_secret');
-                        if (dbSecret) {
-                            webhookSecret = dbSecret;
-                        }
-                    } else {
-                        log.warn('Webhook sender not found in database', { githubId: payload.sender?.id });
-                    }
-                } catch (err) {
-                    log.warn('Failed to fetch webhook secret from database', { error: (err as any).message });
-                }
-
-                // Verify webhook signature
+                // Verify signature BEFORE parsing the payload — use global webhook secret
+                const webhookSecret = config.github.webhookSecret;
                 if (webhookSecret) {
                     const signature = req.headers['x-hub-signature-256'] as string;
-
-                    log.info('Webhook signature verification', {
-                        hasSignatureHeader: !!signature,
-                        signaturePrefix: signature ? signature.substring(0, 20) + '...' : 'none',
-                        rawBodyLength: rawBody.length,
-                        configuredSecretLength: webhookSecret.length,
-                    });
 
                     if (!signature) {
                         log.warn('Missing x-hub-signature-256 header');
@@ -98,14 +80,7 @@ export class WebhookServer {
                     }
 
                     if (!this.verifySignature(rawBody, signature, webhookSecret)) {
-                        const expected = `sha256=${crypto
-                            .createHmac('sha256', webhookSecret)
-                            .update(rawBody)
-                            .digest('hex')}`;
-                        log.warn('Webhook signature mismatch', {
-                            received: signature.substring(0, 20) + '...',
-                            expected: expected.substring(0, 20) + '...',
-                        });
+                        log.warn('Webhook signature mismatch');
                         res.status(401).json({ error: 'Invalid signature' });
                         return;
                     }
@@ -115,8 +90,16 @@ export class WebhookServer {
                     log.warn('Webhook secret not configured — signature verification skipped');
                 }
 
-                const event = req.headers['x-github-event'] as string;
+                let payload: WebhookIssuePayload;
+                try {
+                    payload = JSON.parse(rawBody.toString('utf8'));
+                } catch {
+                    log.error('Webhook body is not valid JSON');
+                    res.status(400).json({ error: 'Invalid JSON body' });
+                    return;
+                }
 
+                const event = req.headers['x-github-event'] as string;
                 if (!event) {
                     res.status(400).json({ error: 'Missing X-GitHub-Event header' });
                     return;
@@ -127,20 +110,20 @@ export class WebhookServer {
                     repo: payload.repository?.full_name,
                 });
 
-                // Handle issue events
                 if (event === 'issues') {
                     await this.handleIssueEvent(payload);
                 }
 
                 res.status(200).json({ received: true });
-            } catch (error: any) {
-                log.error('Webhook handler error', { error: error.message });
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : 'Unknown error';
+                log.error('Webhook handler error', { error: message });
                 res.status(500).json({ error: 'Internal server error' });
             }
         });
     }
 
-    private async handleIssueEvent(payload: any): Promise<void> {
+    private async handleIssueEvent(payload: WebhookIssuePayload): Promise<void> {
         const action = payload.action;
         const issue = payload.issue;
 
@@ -149,7 +132,7 @@ export class WebhookServer {
             return;
         }
 
-        const labels = (issue.labels || []).map((l: any) => l.name);
+        const labels = (issue.labels || []).map((l) => l.name);
 
         log.info(`Issue event: ${action} for #${issue.number}`, {
             title: issue.title,
@@ -158,23 +141,21 @@ export class WebhookServer {
 
         const hasTargetLabel = labels.includes(config.github.issueLabel);
         const isNew = action === 'opened';
-        const isLabeled = action === 'labeled' &&
-            labels.includes(config.github.issueLabel);
+        const isLabeled = action === 'labeled' && hasTargetLabel;
 
         if (hasTargetLabel && (isNew || isLabeled)) {
             const repoName = payload.repository?.name;
             const repoOwner = payload.repository?.owner?.login;
-            if (!repoName) {
-                log.warn('Webhook payload missing repository name');
+            if (!repoName || !repoOwner) {
+                log.warn('Webhook payload missing repository info');
                 return;
             }
 
-            // Look up the sender's user record to get their OAuth token and config
             const senderGithubId = payload.sender?.id;
             const user = senderGithubId ? await userRepo.findByGithubId(senderGithubId) : null;
 
             if (!user) {
-                log.warn('Webhook sender not registered — cannot authenticate GitHub API calls', { githubId: senderGithubId });
+                log.warn('Webhook sender not registered', { githubId: senderGithubId });
                 return;
             }
 
@@ -190,10 +171,10 @@ export class WebhookServer {
             log.info(`Triggering Super Agent for issue #${issue.number} in ${repoName} (user: ${user.github_login})`);
 
             setTimeout(() => {
-                agent.processRepo(repoName, { owner: repoOwner }).catch((err) => {
+                agent.processRepo(repoName, { owner: repoOwner }).catch((err: Error) => {
                     log.error(`Super Agent run failed for ${repoName}`, { error: err.message });
                 });
-            }, 1000); // Delay to allow GitHub's eventual consistency to settle
+            }, 1000);
         } else {
             log.info(`Issue #${issue.number} does not meet trigger conditions`, {
                 hasTargetLabel,
